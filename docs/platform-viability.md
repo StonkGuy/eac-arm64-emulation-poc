@@ -138,6 +138,26 @@ here. The Linux/Proton stack is Wine (a userspace API layer), not a Windows kern
 (Windows mode), which Linux does not use and this project cannot reach. The Linux mode collapses it to "userspace
 client + injected module," both in the same userspace, and they cannot be separated without severing the injection.
 
+## Prior art, and why this repo is not that
+
+There is an older, separate line of work called `vrc-eac-emulator` (originally `ShimadaNanaki/vrc-eac-emulator`, now
+continued at `VRC-Emulator/vrc-eac-emulator`). It is **not** the same approach and nothing from it is used here:
+
+* Its own description is "PoC of Semi-Emulated EAC **bypass**". It builds a `version.dll` bootstrapper beside
+  `VRChat.exe` and a shim named `EOSSDK-Win64-Shipping.dll`, hooks EAC/EOS calls with **MinHook**, and redirects them to
+  a Linux VM.
+* Its setup guide's load-bearing step is a `.vmx` full of **hypervisor-hiding and hardware-spoofing** (SMBIOS/vendor/
+  serial masking, avoiding the `00:50` MAC prefix), explicitly to "avoid VM detection from EAC".
+* It is distributed via Discord, ships no usage guide ("you'll have to figure it out yourself"), and its original is
+  archived.
+
+That is a bypass posture: disguise the environment and intercept the anti-cheat's calls. This repository is the
+opposite. It runs EAC's **sanctioned Linux/Proton mode** — which Epic enabled deliberately, with no kernel driver — and
+makes **FEX behave like a real Linux kernel** so that the unmodified, official anti-cheat client works. Nothing here
+hooks, shims, fakes or short-circuits EAC, and this project does not need hypervisor hiding: EAC's Linux path is
+designed for Linux, and a micro-VM is already how FEX runs on this host. The honest framing matters, because the
+"shim and hide" route is brittle (an EAC update breaks it) and is the part of this space that is a bypass.
+
 ## Verdict
 
 | | Feasible now? |
