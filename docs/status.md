@@ -28,6 +28,9 @@ concept — read "works" and "open" accordingly.
   transport sub-case is real and fixed: the guest NIC's 64 KB MTU (see
   [disconnects.md](disconnects.md#mtu-was-necessary-but-not-sufficient-and-a-wifi-power-save-candidate)) — with it
   set to 1500 the transport is clean and the stall still fires, but it was one way to produce the shape.
+  Three host/launcher levers were **tested and rejected**: WiFi power-save (on 7 join/1 stall vs off 7 join/1 stall,
+  interleaved), Wine `PROTON_NO_FSYNC` (which **worsens** it — ctl 7 join/0 stall vs nof 3 join/4 stall, interleaved 7
+  pairs), and the MTU above. What remains is the EOS SDK-config / Stomp reconnect at the transition.
 * **The guest can be OOM-killed** with a small `--mem`. The muvm guest kernel is stripped (no `zram` module, no
   `virtio_balloon` driver) and has **no swap**; its `/` is virtiofs onto the host disk, which is typically too full for a
   swapfile. VRChat's working set alone is ~4.7 GB anon, so a `--mem 7168` guest reaches its ceiling after world entry and
@@ -35,7 +38,6 @@ concept — read "works" and "open" accordingly.
   available memory in-world is still only a few hundred MB — the 16 GB host + swap-less, balloon-less guest is genuinely
   tight. Never returned to the host either: with no balloon driver, freed guest pages stay resident in the VM process
   until it is restarted.
-* **CPU throttling on the test machine** (bursts of ~5× slower for 12–18 s). **Measured and attributed** — a canary
 * **CPU throttling on the test machine** (bursts of ~5× slower for 12–18 s). **Measured and attributed** — a canary
   process (identical work, every second) slows **3.16× / 5.25× / 4.84×** inside the three FPS-dip windows, while the
   SoC collapses from ~22.4 W to ~11.9 W (sys) and heat from ~12.8 W to ~5.4 W. FEX's own counters are flat across a dip
