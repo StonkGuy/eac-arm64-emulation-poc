@@ -80,8 +80,13 @@ the arms diverge; a failure at/before `Loader initializing` or the CDN fetch is 
 
 ## If H1 holds
 
-The port is then engineering: reproduce steamac's host glue, build the patched FEX, wire Steam/Proton, and tune
-(thermals, the strict-NAT UDP path for VRChat's Photon traffic, microphone capture — both unproven on this stack).
+The port is then engineering — but not trivial engineering on the graphics side. The host glue is a stack of **patched,
+version-pinned, non-upstream** components, not a package you install: `virglrenderer` is pinned to one revision for the
+Venus protocol ABI, the guest Mesa is a COPR build (upstream Mesa is not enough on macOS), MoltenVK is a patched fork, and
+there are known 16 KB-blob alignment fixes. Stock `podman`+libkrun is **compute-only** (Vulkan compute shaders, no
+rendering); the *rendering* path is what `steamac` added. So the work is: reproduce that host glue for a plain Linux guest,
+build the patched FEX, wire Steam/Proton, and tune (thermals; the strict-NAT UDP path for VRChat's Photon traffic;
+microphone capture — both unproven on this stack).
 
 ## If H0 holds
 
