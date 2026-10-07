@@ -24,7 +24,18 @@ concept — read "works" and "open" accordingly.
   a raw host pass-through with no path that could swallow a pipe write, so the missing wake-up is server-side
   (wineserver/EOS) or environmental. The corpus cannot separate "lost completion" from "the peer never answered" — both
   leave the same footprint. Patch 0009 (`rt_sigsuspend` no longer host-blocks FEX's own signals) is kept as a
-  defensible correctness fix but is **not** claimed to fix this; it was not A/B-tested against the stall.
+  defensible correctness fix but is **not** claimed to fix this; it was not A/B-tested against the stall. One
+  transport sub-case is real and fixed: the guest NIC's 64 KB MTU (see
+  [disconnects.md](disconnects.md#mtu-was-necessary-but-not-sufficient-and-a-wifi-power-save-candidate)) — with it
+  set to 1500 the transport is clean and the stall still fires, but it was one way to produce the shape.
+* **The guest can be OOM-killed** with a small `--mem`. The muvm guest kernel is stripped (no `zram` module, no
+  `virtio_balloon` driver) and has **no swap**; its `/` is virtiofs onto the host disk, which is typically too full for a
+  swapfile. VRChat's working set alone is ~4.7 GB anon, so a `--mem 7168` guest reaches its ceiling after world entry and
+  the **guest's own OOM killer** kills `VRChat.exe` (`oom-kill: ... task=VRChat.exe`). With `--mem 8192` it holds, but
+  available memory in-world is still only a few hundred MB — the 16 GB host + swap-less, balloon-less guest is genuinely
+  tight. Never returned to the host either: with no balloon driver, freed guest pages stay resident in the VM process
+  until it is restarted.
+* **CPU throttling on the test machine** (bursts of ~5× slower for 12–18 s). **Measured and attributed** — a canary
 * **CPU throttling on the test machine** (bursts of ~5× slower for 12–18 s). **Measured and attributed** — a canary
   process (identical work, every second) slows **3.16× / 5.25× / 4.84×** inside the three FPS-dip windows, while the
   SoC collapses from ~22.4 W to ~11.9 W (sys) and heat from ~12.8 W to ~5.4 W. FEX's own counters are flat across a dip

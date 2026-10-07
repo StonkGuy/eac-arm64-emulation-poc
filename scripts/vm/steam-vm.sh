@@ -5,7 +5,9 @@
 #   * the VM in its own systemd scope with high CPU/IO weight and memory protection.
 #
 #   scripts/vm/steam-vm.sh [steam args...]
-# Environment: VM_MEM_MB (8192) VM_VRAM_MB (4096) REALISM (0|1) FEX_OVERLAY_DIR VM_MEMLOW (8G)
+# Environment: VM_MEM_MB (8192) VM_VRAM_MB (4096) VM_MTU (1500) REALISM (0|1) FEX_OVERLAY_DIR VM_MEMLOW (8G)
+# Note: VM_MEM_MB below 8192 risks the guest (which has no swap) OOM-killing VRChat once a world loads; ~8 GB is the
+# known-good floor. --passt-args is one argv token (-m1500), so it needs no shell quoting here.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 STATE=${XDG_STATE_HOME:-$HOME/.local/state}/vrchat-fex-eac; mkdir -p "$STATE"
@@ -23,5 +25,6 @@ chmod +x "$STATE/guest-setup.sh"
 
 rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/krun"   # a stale muvm server socket makes `muvm` talk to a dead VM
 exec systemd-run --user --scope --quiet -p CPUWeight=1000 -p IOWeight=1000 -p "MemoryLow=${VM_MEMLOW:-8G}" \
-  muvm -x "$STATE/guest-setup.sh" --mem "${VM_MEM_MB:-8192}" --vram "${VM_VRAM_MB:-4096}" -- \
+  muvm -x "$STATE/guest-setup.sh" --mem "${VM_MEM_MB:-8192}" --vram "${VM_VRAM_MB:-4096}" \
+  --passt-args=-m"${VM_MTU:-1500}" -- \
   FEXBash -c "$STEAM_SH -cef-force-occlusion $*"

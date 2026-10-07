@@ -164,6 +164,23 @@ value and bitset are forwarded verbatim, `-EINTR` is returned as-is) — there i
 wineserver's own state — a passive `/proc/<wineserver>/{syscall,fdinfo}` probe (no ptrace, so EAC-safe) is now recorded
 at each wedge to close that gap. The signal fixes in this series do not remove this stall, and are not expected to.
 
+### MTU was necessary but not sufficient (and a WiFi-power-save candidate)
+
+The guest virtio-NIC comes up at MTU 65520 while the real path is 1500, which produces ~43 KB TCP super-segments
+(retransmitted) and drops large UDP datagrams; that alone causes a stall-shaped failure and is now fixed at boot
+(`passt -m 1500`, or `--passt-args=-m1500` to muvm — a single token so it survives the unquoted `$MUVM_ARGS`
+interpolation in `scripts/vm/vm_up.sh`). With the guest at MTU 1500 the transport is clean — UDP to the Photon master
+(216.120.180.19) is 0 % loss for 512/1200/1400/1472-byte datagrams, external TCP is `mss:1460 pmtu:1500`, DNS 40/40
+and HTTPS 40/40 sub-second — **and the stall still happens**, at either sub-step (`Requesting join token`, i.e. HTTPS,
+or `Connecting to realtime network`, i.e. the UDP region connect). So MTU is a real sub-case, not the whole story; the
+mechanism above (client parked on a server-reply pipe) is unchanged.
+
+One host-side candidate matches the **batches** pattern: on a WiFi host with **power-save enabled** the link latency is
+bursty and the join handshakes have short deadlines. Switching it off — `nmcli connection modify "<conn>"
+802-11-wireless.powersave 2` (persisted in the profile) and re-up so `iw dev <wlan> get power_save` reports `off` — gave
+a clean join on the first try right after two consecutive stalls. This is **N = 1** and not yet trusted; re-test before
+writing it up as a fix.
+
 ## How to capture and read a wedge
 
 1. Run the game with `FEX_PROFILESAMPLEHZ=1 FEX_PROFILESAMPLEALLTHREADS=1` in its environment (this only enables the

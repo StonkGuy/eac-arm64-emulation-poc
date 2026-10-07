@@ -8,7 +8,8 @@ the kernel OOM-killed the whole VM ("the game crashed"). Order of importance:
 
 | Knob | Where | Why |
 |---|---|---|
-| `muvm --mem 8192 --vram 4096` | `scripts/vm/steam-vm.sh` | muvm defaults to 80 % of RAM for the guest and 50 % of RAM reported as VRAM; Unity sizes its caches from that (`SystemInfo.graphicsMemorySize` was 7813 MB). |
+| `muvm --mem 8192 --vram 4096` | `scripts/vm/steam-vm.sh` | muvm defaults to 80 % of RAM for the guest and 50 % of RAM reported as VRAM; Unity sizes its caches from that (`SystemInfo.graphicsMemorySize` was 7813 MB). The guest has **no swap** (stripped kernel: no `zram`, no `virtio_balloon`; `/` is virtiofs onto the host disk), so `--mem` below ~8192 lets the guest's own OOM killer kill `VRChat.exe` (~4.7 GB anon) once a world loads. |
+| `--passt-args=-m1500` | `scripts/vm/steam-vm.sh` (`VM_MTU`) | the virtio NIC defaults to 65520 MTU against a 1500 path; passt's `-m` advertises 1500 over DHCP so eth0 comes up correct. Single argv token, so no shell quoting. |
 | `DXVK_CONFIG_FILE=scripts/dxvk.conf` | launch options | caps the memory heaps DXVK reports. |
 | `PROTON_USE_XALIA=0` | launch options | skips Proton's accessibility helper (~350 MB). |
 | `vm.watermark_boost_factor=0` | `scripts/host-tune.sh` | the OOM report showed the min watermark boosted from 352 MB to 1.1 GB; boosting makes the kernel reclaim long before memory is short. |
