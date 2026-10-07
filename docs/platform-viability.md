@@ -88,33 +88,56 @@ real line of work. Two things to keep straight:
 
 The stack this repository runs on is **libkrun**: `muvm` (the micro-VM here) is a libkrun front-end ("the `muvm` binary
 uses libkrun to create microVMs"). libkrun runs on Linux via KVM and on macOS via Hypervisor.framework — the *same* VMM
-on both. And the macOS side is already demonstrated end to end: the `steamac` project (Valve's ARM64 SteamOS in a
-libkrun VM on Apple silicon) reports a verified pipeline of
+on both. The macOS side is reported end to end by the `steamac` project (Valve's ARM64 SteamOS in a libkrun VM on
+Apple silicon; created 2026-10-04, Apache-2.0, independent of Valve). Its README reports — **its own claim, no
+independent reproduction found** — a verified pipeline of
 
 ```
-x86-64 game → DXVK (Proton 11 ARM64, x86 via FEX) → Vulkan → Venus (virtio-gpu) → MoltenVK → Metal
+game (DX9/10/11) → DXVK (Proton 11, x86 via FEX) → Vulkan
+  └─ guest Mesa Venus → virtio-gpu ─ libkrun ─ virglrenderer (Venus) ─ MoltenVK | KosmicKrisp ─ Metal
 ```
 
-with Vulkan 1.4 and the DXVK feature set present in the guest, running DX11 titles. That is **this project's
-architecture on macOS** — same VMM family, same FEX, same Proton/DXVK — with only the host graphics translation
-swapped (MoltenVK instead of native Vulkan). The GPU "blocker" in the UTM section above does not apply here: this route
-does not use UTM's backends at all, and it does not need Apple's ParavirtualizedGraphics (which is for macOS guests).
+with `Virtio-GPU Venus (Apple M4 Max)`, Vulkan 1.4, the DXVK feature set present in the guest, and DX11 titles
+running (*Death's Door*, *Heroes of Might and Magic: Olden Era*, *Diplomacy is Not an Option*). Its guest kernel is
+**4 KB-page** and enables **Apple TSO for FEX via `PR_SET_MEM_MODEL`** — so it is this project's architecture on macOS,
+same VMM family, same FEX, same Proton/DXVK, with only the host graphics translation swapped (MoltenVK instead of native
+Vulkan). The GPU "blocker" in the UTM section above does not apply here: this route does not use UTM's backends at all,
+and it does not need Apple's ParavirtualizedGraphics (which is for macOS guests).
 
 Two consequences:
 
-* **The macOS port uses FEX, not Rosetta.** Rosetta is architecturally bound to Apple's `Virtualization.framework` and
-  cannot work with libkrun/Hypervisor.framework (Podman discussion #28297). So on the only macOS route that has both
-  translation *and* hardware 3D, x86-64 translation is done by **the same FEX binary this repository patches**. Our nine
-  patches are therefore the port's prerequisite, not a detail.
+* **The macOS port uses FEX, not Rosetta.** Rosetta-for-Linux is exposed only through Apple's `Virtualization.framework`
+  (`VZLinuxRosettaDirectoryShare`; Apple's "Running Intel Binaries in Linux VMs"); no supported or documented mechanism
+  drives it from a raw Hypervisor.framework VMM like libkrun, and none has been implemented. So on the only macOS route
+  that has both translation *and* hardware 3D, x86-64 translation is done by **the same FEX binary this repository
+  patches**. Our nine patches are therefore the port's prerequisite, not a detail. (Strictly: "no supported path
+  exists"; a hypothetical reverse-engineered shim is not ruled out, but nothing supports one.)
 * **D3DMetal and Rosetta belong to a different route.** They are for *native macOS Wine* (Game Porting Toolkit /
   CrossOver), which cannot run the Linux/Proton EAC client and is the route EAC blocks. The workable macOS route is the
   Linux-in-libkrun one, and it uses DXVK + Venus + FEX, not D3DMetal + Rosetta. The three-slot decomposition that
   motivates the port still holds; the macOS vendors for those slots on the workable route are DXVK/Venus, FEX and Wine.
 
-The one thing `steamac` lists as out of scope is exactly what this project is about: "anti-cheat systems that block VMs
-won't work." But this repository already runs EAC inside a VM — the muvm/libkrun micro-VM — so "it is a VM" is not by
-itself fatal; the open question is only whether EAC's Linux client accepts a macOS-libkrun guest as it accepts an
-Asahi-muvm one. That is untested, and it is the single real unknown.
+### What `steamac` does *not* establish
+
+The stack is real; the anti-cheat question is not answered by it, and its author disclaims it:
+
+* Its **only** statement about anti-cheat is "anti-cheat systems that block VMs will not work." There is no EAC-specific
+  work, no VM-identity masking, and no issue or discussion suggesting otherwise.
+* **DX12 is capped at feature level 11_0 / shader model 6.0** (MoltenVK; no tiled resources, no SM 6.6). Many modern
+  EAC titles need more. (The Russian README claims 12_0 on KosmicKrisp; the English README and the docs site still say
+  11_0, so treat 11_0 as current.)
+* It does **not pin a FEX or EAC version** — FEX is Valve's, shipped inside Proton 11 ARM64, and whether the ARM64
+  SteamOS image even carries Valve's EAC runtime is unaddressed.
+* It is **days old**, demonstrates only three or four games in short offline sessions, and has no compatibility list.
+  The game image is Valve's **unreleased-hardware beta** (the Steam Frame build), which its EULA does not permit
+  redistributing and whose long-term availability is uncertain.
+
+Three sub-questions remain unanswered by every source found, and they are the ones that decide a port: (a) does EAC's
+Linux/Proton runtime — an x86-64 ELF — run under the guest's FEX? (b) does EAC's VM checks flag a Hypervisor.framework
+guest (CPUID hypervisor bit, virtio devices, `systemd-detect-virt`)? (c) is EAC's runtime present in the ARM64 SteamOS
+image at all? This repository already runs EAC inside a micro-VM (muvm/libkrun), so "it is a VM" is not by itself fatal —
+but that was an Asahi host, and whether EAC tolerates a *macOS* libkrun guest the same way is untested. It is the single
+real unknown, and it is a question about EAC's detection, not about the stack.
 
 ## Splitting the anti-cheat from the game: why it does not work
 
