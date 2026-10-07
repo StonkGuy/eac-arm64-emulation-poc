@@ -164,6 +164,37 @@ value and bitset are forwarded verbatim, `-EINTR` is returned as-is) — there i
 wineserver's own state — a passive `/proc/<wineserver>/{syscall,fdinfo}` probe (no ptrace, so EAC-safe) is now recorded
 at each wedge to close that gap. The signal fixes in this series do not remove this stall, and are not expected to.
 
+### Captured in the act: it is a *quiet* 61 s hang at the Stomp→world-fetch hand-off
+
+A socket-level capture of a live stall (launch loop that watches the log for a >12 s quiet gap past
+`Beginning room transition`, then snapshots `ss -tinep` + `/proc/net/tcp` + `/proc/net/snmp` inside the guest and
+`ss`/SNMP on the host; `sandbox/capture_stall.sh`) narrows the "environmental" side further. The stalled log's **last
+mutable line** is `[LogEOSMessaging] Successfully connected to Stomp` (plus one `Websockets API connected`); nothing after
+it for 61 s. The socket state at that instant:
+
+* **No flow to the destination is ever opened.** The game holds no connection to the EU region endpoint — the stall is
+  between "world info fetched" and "region join", i.e. the client never gets as far as dialling Photon.
+* **The only stalled TCP flow is the websocket's own connection**, `192.168.1.102:55580 → 216.120.180.19:443`, in
+  `CLOSE-WAIT` (peer — the VRChat/EOS websocket host — sent FIN; the client never closes). Its peer is *not* idle: it is
+  the same host as the Photon master (`216.120.180.19`), so a server-side FIN here is an intentional disconnect.
+* **A backpressured read is sitting unread**: `[2606:4700::6812:1a24]:443` (Cloudflare) with **Recv-Q 138 and no thread
+  in `recvfrom`/`recvmsg`** — data arrived and the reader is parked in the reply wait, not on the socket, exactly the
+  documented wedge.
+* **The transport is clean, and the dead flows are dead.** Every VM flow on the host is `mss:1448 pmtu:1500 rtt<20ms`.
+  Two `FIN-WAIT-1` flows to `2.23.90.177:443` (Akamai) sit at `backoff:8` (`rto:53760`, `lastrcv:lastack≈385 s`) and have
+  **no guest-side counterpart in `/proc/net/tcp`** — stale host sockets from a connection the guest has already abandoned,
+  not the stall (their `last*` ages predate the stall by minutes).
+
+So the stall is a **cause, not a transport failure**: a server-side/EOS state transition (the websocket FIN, then a join
+handshake the client never starts) hits the same client-side reply-pipe wedge. Two candidate triggers, both testable
+without ptrace:
+
+1. **`PROTON_NO_FSYNC`** — the reproducer above wedges with Wine fsync (server-side waits) and **not** without it, so the
+   EOS/websocket threads that block in server-side async I/O are exactly the ones whose completion is lost. Untested on
+   the real game for the *stall* (only for the time-out).
+2. **EOS SDK config / Stomp reconnect** — `ScheduleNextSDKConfigDataUpdate … Update Interval: 310.58` is always printed at
+   this point; if the update lands during the transition the client may be juggling Stomp and the world fetch at once.
+
 ### MTU was necessary but not sufficient (and a WiFi-power-save candidate)
 
 The guest virtio-NIC comes up at MTU 65520 while the real path is 1500, which produces ~43 KB TCP super-segments
