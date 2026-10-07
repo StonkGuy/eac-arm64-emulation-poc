@@ -90,10 +90,21 @@ it, so correctness is preserved and the storm stops. Setting `FEX_SMCHOTPAGEFAUL
 
 ## Not part of the emulation: environment realism
 
-VRChat documents that EAC rejects virtual machines and lists what to make look like real hardware (SMBIOS/DMI strings,
-CPUID hypervisor vendor, NIC OUI ...). Because the arm64 setup runs Steam inside a microVM (muvm), `scripts/vm/` ships an
-*optional* module that exposes plausible DMI/PCI/hostname data to the guest. Whether it is still needed once the
-ptrace emulation is faithful has not been verified (see `docs/status.md`). VRChat does not support VMs; you can be banned.
+VRChat's guide "Using VRChat in a Virtual Machine" documents that EAC's VM block is its CPUID hypervisor-vendor check
+and lists the hardware data to make look real (SMBIOS/DMI strings, PCI devices, hostname), adding that it does not mind
+people doing this in some cases. Because the arm64 setup runs Steam inside a microVM (muvm), `scripts/vm/realism.sh`
+ships an *optional* module that exposes plausible DMI/PCI/hostname data to the guest.
+
+Two things to keep straight about it:
+
+* It is **environment adaptation, not emulation-fidelity work** — the same category as the guide, and unlike the FEX
+  patches it does not change how faithfully guest code runs. It does not touch the anti-cheat or its result.
+* Whether it is **still needed once the ptrace emulation is faithful has not been verified** (see `docs/status.md`),
+  and it is not needed to reproduce the emulation work.
+
+The upstream fact that makes this a separate question: **EAC tolerates virtual machines when it recognises the
+environment.** VRChat itself runs on GeForce NOW's cloud VMs, so "EAC refuses VMs" is really "EAC's default check
+refuses an *unrecognised* VM." VRChat does not support VMs; you can be banned.
 
 ## Cheap invalidation for many threads (`patches/0003`, `0004`)
 

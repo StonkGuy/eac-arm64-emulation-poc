@@ -79,7 +79,14 @@ open: [docs/status.md](docs/status.md).
 
 * **Not an anti-cheat bypass.** Nothing fakes, replays or short-circuits EAC's result; no Epic or VRChat binaries,
   keys or traces are included. The patches only make FEX behave like a real Linux kernel for `ptrace`, signals and
-  `/proc/<pid>/exe`.
+  `/proc/<pid>/exe`, and the EAC client that runs is the stock, unmodified one from Valve's Proton EAC Runtime.
+* **One caveat, stated plainly.** The optional `scripts/vm/realism.sh` does **not** touch EAC, but it is not pure
+  emulation-fidelity either: it presents plausible SMBIOS/DMI/PCI/hostname data to the guest so it looks less like a
+  microVM. That is *environment adaptation*, and it follows VRChat's own published guide, "Using VRChat in a Virtual
+  Machine", which says EAC's VM block is its CPUID hypervisor-vendor check and that **"you can get virtualization
+  working alongside EAC in some cases, and we don't mind if you do this."** Read that as a policy statement, not a
+  licence: it is tolerated-but-unsupported, and this repository marks the script **optional and unverified as
+  necessary**. It is not required to reproduce the emulation work, and it does not modify the game or the anti-cheat.
 * **Not supported by VRChat.** VRChat does not support virtual machines or emulation; Epic/VRChat may change anything
   at any time and enforcement is their call. Use at your own risk, and never run modified clients. Never attach a
   debugger or `perf` to the running game: EAC reports it.
