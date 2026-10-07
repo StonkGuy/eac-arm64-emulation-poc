@@ -24,6 +24,10 @@ WRAP
 chmod +x "$STATE/guest-setup.sh"
 
 rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/krun"   # a stale muvm server socket makes `muvm` talk to a dead VM
+
+# The guest has no swap, so warn (desktop notification) before its OOM killer takes VRChat, and report if it does.
+[ "${VM_OOM_WATCH:-1}" = 1 ] && nohup "$HERE/oom-watch.sh" "${VM_OOM_WATCH_POLL:-15}" >"$STATE/oom-watch.log" 2>&1 &
+
 exec systemd-run --user --scope --quiet -p CPUWeight=1000 -p IOWeight=1000 -p "MemoryLow=${VM_MEMLOW:-8G}" \
   muvm -x "$STATE/guest-setup.sh" --mem "${VM_MEM_MB:-8192}" --vram "${VM_VRAM_MB:-4096}" \
   --passt-args=-m"${VM_MTU:-1500}" -- \

@@ -17,6 +17,7 @@ the kernel OOM-killed the whole VM ("the game crashed"). Order of importance:
 | 8 GB zram swap | `scripts/host-tune.sh` | zswap needs a swap *slot* per stored page; an 8 GB swapfile was full when the OOM killer fired. |
 | NVMe `read_ahead_kb=256` | `scripts/host-tune.sh` | the distro value was 4096 (4 MB per read-ahead). |
 | shut the VM down when idle | — | after the game exits the host keeps the pages the guest freed (balloon reporting is lazy): a VM with 2 GB in use still pinned 5–7 GB. |
+| memory watchdog | `scripts/vm/oom-watch.sh` (auto-started by `steam-vm.sh`) | the guest has no swap, so its own OOM killer takes VRChat once memory is short ("joins then dies"). The watchdog posts a desktop notification at the guest and host low-water marks and reports an actual OOM kill. `VM_OOM_WATCH_POLL` (15 s), `OOM_WATCH_LOW_MB`/`CRIT_MB`/`HOST_MB`; `OOM_WATCH_NO_DESKTOP=1` prints only. |
 
 Steam's web helpers (`steamwebhelper`) use ~2 GB inside the VM; `-no-browser` does not stop them with current Steam.
 

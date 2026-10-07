@@ -175,11 +175,12 @@ and HTTPS 40/40 sub-second — **and the stall still happens**, at either sub-st
 or `Connecting to realtime network`, i.e. the UDP region connect). So MTU is a real sub-case, not the whole story; the
 mechanism above (client parked on a server-reply pipe) is unchanged.
 
-One host-side candidate matches the **batches** pattern: on a WiFi host with **power-save enabled** the link latency is
-bursty and the join handshakes have short deadlines. Switching it off — `nmcli connection modify "<conn>"
-802-11-wireless.powersave 2` (persisted in the profile) and re-up so `iw dev <wlan> get power_save` reports `off` — gave
-a clean join on the first try right after two consecutive stalls. This is **N = 1** and not yet trusted; re-test before
-writing it up as a fix.
+One host-side candidate — WiFi power-save (bursty link latency vs the join deadlines) — was **tested and rejected**. An
+interleaved A/B with the network interface bounced between power-save `off` and `on` every launch in a single VM, so any
+time-varying server/host condition hit both arms equally: 16 launches gave **power-save on 7 join / 1 stall, power-save
+off 7 join / 1 stall** — identical. Every log was re-checked by hand (a stall is `Finished entering world` = 0 with a
+`current state: Disconnecting` line; a join is the reverse). The stall rate here was 2/16 (≈ 13 %), in line with the
+census, and independent of the interface state. So power-save is not the trigger; the environmental cause is still open.
 
 ## How to capture and read a wedge
 
