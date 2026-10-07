@@ -127,42 +127,47 @@ stall *before* `Destination fetching`, one observed *between* `Destination fetch
 opens with `ConnectedToNameServer`. It happens in **both** arms of the A/B (`ab54`/`ab59` control, `ab62` with
 `FEX_SIGNALMASKFIX=1`), so it is not the signal-mask bug.
 
-A thread snapshot taken at the stall (no ptrace, `FEX_PROFILESAMPLEHZ=1`) shows:
+A thread snapshot taken at the stall (no ptrace, `FEX_PROFILESAMPLEHZ=1`) showed:
 
-* the parked threads (a `WebSocketClient` and the `VRCNPServer`) are in `read(fd, buf, 0x10)` on a **pipe** — Wine's
-  `wait_select_reply` for a server-call reply — not on a socket;
-* a **Cloudflare `:443` socket** of the game has ~5 KB of unread data with **no thread reading it** and no thread in
+* threads read as parked in `read(fd, buf, 0x10)` on a **pipe** (Wine's `wait_select_reply`) — not discriminating: the
+  register decode for the snapshot's 1280-byte record layout was wrong, and that wait is the idle footprint in every
+  session ([wine-socket-analysis.md](wine-socket-analysis.md));
+* a **Cloudflare `:443` socket** of the game with ~5 KB of unread data, **no thread reading it**, no thread in
   `recvfrom`/`recvmsg`;
-* wineserver is idle in `epoll_wait` holding that socket, and its per-fd registration for it has gone from
-  `events: 1b` (the kernel ORs in `ERR|HUP`, so `1b` = `EPOLLIN|EPOLLPRI`) to `events: 18` (nothing registered) with data
-  still queued.
+* wineserver idle in `epoll_wait` holding that socket, its per-fd registration gone from `events: 1b` (`EPOLLIN|EPOLLPRI`;
+  the kernel ORs in `ERR|HUP`) to `events: 18` with data still queued.
 
-So the client is waiting for a completion that the server never posts. The FEX epoll/eventfd path was ruled out (it is a
-plain pass-through: `x64/EPoll.cpp`, and `EPOLLERR|EPOLLHUP` are always ORed in by the kernel, so the `0x18` alone is not
-proof of loss). The earlier "start-up hang" snapshots (~140 threads in `NtWaitForAlertByThreadId`, 13 in `futex_waitv`,
-none in the reply read) are a third variant of the same "the game's own threads stop making progress at start-up" family.
+The still-valid conclusion is the socket-level one: **unread data with no reader**. Which exact registration state is the
+stall's is settled by the later `wedgewatch` captures — `0x1a` (event-select mode, `FD_READ` reported and not re-armed) with
+`Recv-Q > 0`, on two managed sockets at once; healthy sessions read `0x1b`, and `0x18` is a *separate* state (a queued
+async that was completed and never collected). The FEX epoll/eventfd path was ruled out (plain pass-through:
+`x64/EPoll.cpp`; `EPOLLERR|EPOLLHUP` are always ORed in by the kernel, so a mask alone is not proof of loss). The earlier
+"start-up hang" snapshots (~140 threads in `NtWaitForAlertByThreadId`, 13 in `futex_waitv`) are a third variant of the
+same "the game's own threads stop making progress at start-up" family.
 
 ### Traced: the stall is not a FEX bug
 
-A campaign with the arm that also sets `FEX_SIGNALTRACE=1` (so every FEX process, including the x86-64 wineserver,
-writes a ring) caught the stall on the first session. With a corrected snapshot decode (the record grew to 1280 bytes in
-this build; `tools/harness/resolve_snap.py` now auto-detects 640 vs 1280) the picture is:
+A trace with `FEX_SIGNALTRACE=1` (every FEX process, including the x86-64 wineserver, writes a ring) captured a stall.
+With the snapshot decode corrected for this build (the record grew to 1280 bytes; `tools/harness/resolve_snap.py`
+auto-detects 640 vs 1280) the reading was:
 
-* Only **two** threads are genuinely parked in a read: `WebSocketClient` (fd 294) and `VRCNPServer` (fd 316), both on an
-  **empty server-reply pipe** (the game holds the read end, wineserver the write end). Every other thread — including the
-  main thread — is in `futex(FUTEX_WAIT)` on Wine's `NtWaitForAlertByThreadId`.
-* Every futex-blocked thread has the **futex word equal to the value it is waiting for** (118/118, then 167/167): nobody
-  woke it, and there is no "wake-up was lost" signature.
-* `SIGUSR1` is fully delivered — 683 of 683 arrivals reached a guest handler (0 masked); only 3 were deferred.
+* two threads looked parked in a read — `WebSocketClient` (fd 294) and `VRCNPServer` (fd 316) — on what was read as an
+  **empty server-reply pipe**; every other thread in `futex(FUTEX_WAIT)` on Wine's `NtWaitForAlertByThreadId`;
+* every futex-blocked thread had the **futex word equal to the value it waits for** (118/118, then 167/167): no
+  lost-wake-up signature;
+* `SIGUSR1` fully delivered — 683 of 683 arrivals reached a guest handler (0 masked); 3 deferred;
 * wineserver's epoll held the game's `:443` socket (`ino 17758`) with 49 bytes unread at the first snapshot and the socket
-  in `CLOSE-WAIT` at the second, yet **no 16-byte reply write to either parked pipe appears anywhere in the ring**.
+  in `CLOSE-WAIT` at the second, with no 16-byte reply write to those pipes in the ring.
 
-FEX's futex syscall is a raw host pass-through (`Passthrough.cpp:474`, one `svc #0`; the guest address, op, expected
-value and bitset are forwarded verbatim, `-EINTR` is returned as-is) — there is no FEX code path between a host
-`futex_wake` and the waiter, and none that could swallow a pipe write. So the missing wake-up is **server-side
-(wineserver/EOS) or environmental**, not in the ptrace/signal/syscall emulation. The one thing still unproven is
-wineserver's own state — a passive `/proc/<wineserver>/{syscall,fdinfo}` probe (no ptrace, so EAC-safe) is now recorded
-at each wedge to close that gap. The signal fixes in this series do not remove this stall, and are not expected to.
+**That "parked on the reply pipe" reading does not hold up** (see [wine-socket-analysis.md](wine-socket-analysis.md)): the
+register decode for the snapshot's 1280-byte record layout was wrong, and the same threads sit in that
+wait in *every* session — it is the idle-state footprint, not a stall signature. The still-valid part is the FEX
+negative: FEX's futex syscall is a raw host pass-through (`Passthrough.cpp:474`, one `svc #0`; address, op, expected
+value and bitset forwarded verbatim, `-EINTR` returned as-is) — there is no FEX code path between a host `futex_wake`
+and the waiter, and none that could swallow a pipe write. So the fault is **not** in the ptrace/signal/syscall
+emulation. The discriminating evidence is wineserver's epoll registration: `0x1a` (no `EPOLLIN`) with data queued on
+both stuck sockets, `FD_READ` reported and never re-armed. The signal fixes in this series do not remove this stall, and
+are not expected to.
 
 ### Captured in the act: it is a *quiet* 61 s hang at the Stomp→world-fetch hand-off
 
@@ -175,21 +180,21 @@ it for 61 s. The socket state at that instant:
 * **No flow to the destination is ever opened.** The game holds no connection to the EU region endpoint — the stall is
   between "world info fetched" and "region join", i.e. the client never gets as far as dialling Photon.
 * **The only stalled TCP flow is the websocket's own connection**, `192.168.1.102:55580 → 216.120.180.19:443`, in
-  `CLOSE-WAIT` (peer — the VRChat/EOS websocket host — sent FIN; the client never closes). Its peer is *not* idle: it is
-  the same host as the Photon master (`216.120.180.19`), so a server-side FIN here is an intentional disconnect.
+  `CLOSE-WAIT` (peer sent FIN; the client never closes). The peer is the Photon **NameServer**
+  (`216.120.180.19` = `ns-eu.photonengine.io`); its FIN drops a connection that sat idle through the ~60 s hang, so it is
+  a consequence of the stall rather than its trigger.
 * **A backpressured read is sitting unread**: `[2606:4700::6812:1a24]:443` (Cloudflare) with **Recv-Q 138 and no thread
-  in `recvfrom`/`recvmsg`** — data arrived and the reader is parked in the reply wait, not on the socket, exactly the
-  documented wedge.
+  in `recvfrom`/`recvmsg`** — data arrived and nothing is draining that socket, the read-drain symptom.
 * **The transport is clean, and the dead flows are dead.** Every VM flow on the host is `mss:1448 pmtu:1500 rtt<20ms`.
   Two `FIN-WAIT-1` flows to `2.23.90.177:443` (Akamai) sit at `backoff:8` (`rto:53760`, `lastrcv:lastack≈385 s`) and have
   **no guest-side counterpart in `/proc/net/tcp`** — stale host sockets from a connection the guest has already abandoned,
   not the stall (their `last*` ages predate the stall by minutes).
 
-So the stall is a **cause, not a transport failure**: a server-side/EOS state transition (the websocket FIN, then a join
-handshake the client never starts) hits the same client-side reply-pipe wedge. The remaining candidate is the EOS SDK
-config / Stomp reconnect (`ScheduleNextSDKConfigDataUpdate … Update Interval: 310.58` is always printed at this point; if
-the update lands during the transition the client may be juggling Stomp and the world fetch at once). Wine's fsync mode
-was tested and **rejected** as a fix — see below.
+So the stall is a **cause, not a transport failure**: the response is present in the guest (bytes queued, transport
+clean), and the client's read-drain stops. An EOS SDK-config / Stomp reconnect does not explain it — the CLOSE-WAIT
+websocket is the Photon NameServer dropping an idle connection (a *consequence*), and the shared `0x1a` read-drain state
+on two independent managed sockets points at the socket layer between IL2CPP and Wine (see
+[wine-socket-analysis.md](wine-socket-analysis.md)). Wine's fsync mode was tested and **rejected** as a fix — see below.
 
 ### `PROTON_NO_FSYNC` makes the stall *worse*, not better (interleaved A/B)
 
@@ -218,12 +223,12 @@ interpolation in `scripts/vm/vm_up.sh`). With the guest at MTU 1500 the transpor
 (216.120.180.19) is 0 % loss for 512/1200/1400/1472-byte datagrams, external TCP is `mss:1460 pmtu:1500`, DNS 40/40
 and HTTPS 40/40 sub-second — **and the stall still happens**, at either sub-step (`Requesting join token`, i.e. HTTPS,
 or `Connecting to realtime network`, i.e. the UDP region connect). So MTU is a real sub-case, not the whole story; the
-mechanism above (client parked on a server-reply pipe) is unchanged.
+mechanism above (unread data on an event-select socket whose `FD_READ` was never re-armed) is unchanged.
 
 One host-side candidate — WiFi power-save (bursty link latency vs the join deadlines) — was **tested and rejected**. An
 interleaved A/B with the network interface bounced between power-save `off` and `on` every launch in a single VM, so any
 time-varying server/host condition hit both arms equally: 16 launches gave **power-save on 7 join / 1 stall, power-save
-off 7 join / 1 stall** — identical. Every log was re-checked by hand (a stall is `Finished entering world` = 0 with a
+off 7 join / 1 stall** — identical. Every log was re-checked individually (a stall is `Finished entering world` = 0 with a
 `current state: Disconnecting` line; a join is the reverse). The stall rate here was 2/16 (≈ 13 %), in line with the
 census, and independent of the interface state. So power-save is not the trigger; the environmental cause is still open.
 

@@ -12,7 +12,6 @@ mirror is the one that gets flagged). After SMCHotPageFaults faults (default 32,
 writable and the JIT emits the SMCChecks=full per-instruction CRC check for instructions translated from it.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01FqdaKHgdwtnxZMQmFK7gnx
 ---
  .../Source/Interface/Config/Config.json.in    |  10 ++
  FEXCore/Source/Interface/Core/Core.cpp        |   2 +-

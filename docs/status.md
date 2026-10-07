@@ -17,20 +17,24 @@ concept — read "works" and "open" accordingly.
   fails and the client retries every ~31 s. It has **two shapes** — most sessions stall *before* `Destination fetching`,
   one observed *between* `Destination fetching` and `Destination set` — and `current state: Disconnecting` is a perfect
   marker (exactly the stalling sessions print it; every other one opens with `ConnectedToNameServer`). It happens **with
-  and without** the signal-mask fix, so it is a different failure. A traced capture (see
-  [disconnects.md](disconnects.md)) shows it is **not a FEX bug**: the parked threads wait on an empty wineserver reply
-  pipe, every futex-blocked thread has its futex word equal to the value it waits on (nobody woke it — no lost
-  wake-up), `SIGUSR1` is fully delivered, and no 16-byte reply write to those pipes appears in the ring. FEX's futex is
-  a raw host pass-through with no path that could swallow a pipe write, so the missing wake-up is server-side
-  (wineserver/EOS) or environmental. The corpus cannot separate "lost completion" from "the peer never answered" — both
-  leave the same footprint. Patch 0009 (`rt_sigsuspend` no longer host-blocks FEX's own signals) is kept as a
-  defensible correctness fix but is **not** claimed to fix this; it was not A/B-tested against the stall. One
-  transport sub-case is real and fixed: the guest NIC's 64 KB MTU (see
+  and without** the signal-mask fix, so it is a different failure. It is **not a FEX bug**: FEX's `futex` is a raw host
+  passthrough and the x64 `epoll` calls convert the guest event struct correctly, so nothing sits between a server
+  wake-up and its waiter. What the socket state shows ([wine-socket-analysis.md](wine-socket-analysis.md)) is a
+  **read-drain** problem: at every stall the Photon NameServer socket and one VRChat API socket both hold unread data
+  while wineserver's epoll registration for them is `0x1a` (no `EPOLLIN`) — the socket is in event-select mode with
+  `FD_READ` already reported and not re-armed, waiting for a `recv` that never comes; healthy sessions read `0x1b`. Two
+  independent managed sockets go stale **in lockstep**, which points at one selector that stopped draining both rather
+  than a per-socket fault. The earlier "two threads parked on an empty wineserver reply pipe" reading does not hold up —
+  the snapshot decoder used the wrong record layout, and that wait is the idle-state footprint every session shows.
+  Patch 0009 (`rt_sigsuspend` no longer host-blocks FEX's own signals) is kept as a defensible correctness fix but is
+  **not** claimed to fix this; it was not A/B-tested against the stall. One transport sub-case is real and fixed: the
+  guest NIC's 64 KB MTU (see
   [disconnects.md](disconnects.md#mtu-was-necessary-but-not-sufficient-and-a-wifi-power-save-candidate)) — with it
   set to 1500 the transport is clean and the stall still fires, but it was one way to produce the shape.
   Three host/launcher levers were **tested and rejected**: WiFi power-save (on 7 join/1 stall vs off 7 join/1 stall,
   interleaved), Wine `PROTON_NO_FSYNC` (which **worsens** it — ctl 7 join/0 stall vs nof 3 join/4 stall, interleaved 7
-  pairs), and the MTU above. What remains is the EOS SDK-config / Stomp reconnect at the transition.
+  pairs), and the MTU above. The stall's mechanism is established from the socket state in the saved stall captures; it
+  is not yet confirmed across a full run of live sessions.
 * **The guest can be OOM-killed** with a small `--mem`. The muvm guest kernel is stripped (no `zram` module, no
   `virtio_balloon` driver) and has **no swap**; its `/` is virtiofs onto the host disk, which is typically too full for a
   swapfile. VRChat's working set alone is ~4.7 GB anon, so a `--mem 7168` guest reaches its ceiling after world entry and

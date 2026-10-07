@@ -1,7 +1,8 @@
 # The pre-join stall: what wineserver's socket state proves
 
-Offline analysis (Phase 0 of `PLAN-stall.md`), against the exact Wine in use — ValveSoftware/wine branch
-`experimental_11.0`, matching Proton `experimental-11.0-20261001`. No VM, no launch. File:line refs are to that branch.
+Analysis against the exact Wine in use — ValveSoftware/wine branch `experimental_11.0`, matching Proton
+`experimental-11.0-20261001`. File:line references are to that branch. The evidence comes from passive `/proc` captures
+of already-saved stall sessions; no debugger is attached to the game (Easy Anti-Cheat reports that).
 
 ## What `/proc/<wineserver>/fdinfo/<epfd>` actually reports
 
@@ -40,7 +41,7 @@ So `EPOLLPRI` with no `EPOLLIN` is exactly the state where **`AFD_POLL_READ` is 
 "readable" and is waiting for the game to call `recv`; the game has not, while 49 and 46 bytes sit in the receive queue.**
 This is a stalled read-drain in the guest's managed/Wine handshake, not a byte that never arrived.
 
-## Every receive path funnels through `recv_socket` — so it is not a bypass
+## Every receive path funnels through `recv_socket`
 
 `dlls/ntdll/unix/socket.c`:
 * `sock_recv()` line 917 issues `SERVER_START_REQ(recv_socket)` line 934.
@@ -48,13 +49,13 @@ This is a stalled read-drain in the guest's managed/Wine handshake, not a byte t
 * `sock_ioctl_recv()` line 967 (`IOCTL_AFD_RECV` / `WSARecv`) → `sock_recv()`.
 * The queued-async completion `async_recv_proc` → `try_recv` runs *server-side*, after `recv_socket` already queued it.
 
-There is **no** client path that reads socket data without first issuing `recv_socket`. H1c is refuted: the missing
-step is a `recv` that was never issued, not a `recv` that bypassed the server.
+There is **no** client path that reads socket data without first issuing `recv_socket`, so a receive that bypassed the
+server's re-arm is ruled out: the missing step is a `recv` that was never issued.
 
-## Healthy vs stall, in the same dumps
+## Healthy vs stall, in the same captures
 
 `wedgewatch.py` writes a `tfd:` line only for wineserver fds that have `Recv-Q > 0` (or a `:2700x` Photon endpoint),
-so healthy baselines do carry a few of these lines. Across the corpus:
+so healthy baselines do carry a few of these lines. Across the captures:
 
 * every *healthy* `*_baseline.txt` shows masks `0x1b` (armed) or `0x18` (neither) — **never `0x1a`**;
 * every *stall* `*_wedge*.txt` with data shows `0x1a` with `Recv-Q > 0`: the Photon NameServer (`216.120.180.19:443`)
@@ -66,18 +67,18 @@ selector thread that stopped draining both, not of two independent per-socket bu
 
 ## The two candidate mechanisms still standing
 
-* **H1a (lead): the selector thread was not woken.** `post_socket_event` set the event, but the IL2CPP selector
-  thread waiting on it (under fsync, an `NtWaitForSingleObject`/futex wait) never resumed, so it never called
+* **The selector thread was not woken (favoured).** `post_socket_event` set the event, but the IL2CPP selector thread
+  waiting on it (under fsync, an `NtWaitForSingleObject`/futex wait) never resumed, so it never called
   `WSAEnumNetworkEvents`/`recv` for those two handles. Other sockets whose events fired on a different wait keep
-  working. Predicts: `+server`/`+winsock` shows last `FD_READ`/`set_event` with no following enum/recv for those
-  handles, and the selector thread is parked in futex.
-* **H1b: the app observed `FD_READ` and chose not to recv** (a selector that rebuilt its handle set and dropped one).
+  working. Predicts: `+server`/`+winsock` shows the last `FD_READ`/`set_event` with no following enum/recv for those
+  handles, and the selector thread parked in futex.
+* **The app observed `FD_READ` and chose not to recv** (a selector that rebuilt its handle set and dropped one).
   Predicts: the trace shows the enum/wait returning for those handles, then no `recv`.
 
-H1a is favoured because two independent sockets stall in lockstep. Phase 2's `+winsock`/`+server` trace decides
+The first is favoured because two independent sockets stall in lockstep. A Wine-level `+winsock`/`+server` trace decides
 between them by the single question: **after the last `FD_READ` post, was the app woken and did it act?**
 
-## Race windows to instrument (Phase 2)
+## Race windows to instrument
 
 1. `post_socket_event` (1350) → `set_event( sock->event )` → does the `NtWaitForSingleObject` waiter wake under fsync?
    (Proton's fsync `set_event` path — check the event's `wake_up`/shm signalling.)
@@ -88,8 +89,8 @@ between them by the single question: **after the last `FD_READ` post, was the ap
 4. `socket_get_events` (4197): clears `pending_events` but not `reported_events`; a second `FD_READ` that arrives
    between the server's read of `pending_events` and the clear could be dropped.
 
-## What this changes upstream of it
+## What this means
 
-`PLAN-stall.md` §6 corrections stand. The remaining hypothesis in `HANDOFF-stall.md` (EOS SDK-config / Stomp reconnect)
-is superseded: the bimodal ~60 s timeout plus the shared `AFD_POLL_READ`-reported state on two independent managed
-sockets place the fault in the socket-layer read-drain / selector wake, not in the EOS transition.
+The ~60 s bimodal timeout and the shared `AFD_POLL_READ`-reported state on two independent managed sockets place the
+fault in the socket-layer read-drain / selector wake, not in the EOS transition (the websocket `CLOSE-WAIT` at the stall
+is the Photon NameServer dropping a connection that sat idle through the ~60 s — a consequence, not the cause).

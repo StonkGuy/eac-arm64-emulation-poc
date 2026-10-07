@@ -18,7 +18,6 @@ while the Syscall op refills the registers). The backup keeps it in a separate f
 which abandons the interrupted code, keeps its old behaviour.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01FqdaKHgdwtnxZMQmFK7gnx
 ---
  .../Tools/LinuxEmulation/ArchHelpers/MContext.h  |  3 +++
  .../LinuxSyscalls/SignalDelegator.cpp            | 16 ++++++++++++++++

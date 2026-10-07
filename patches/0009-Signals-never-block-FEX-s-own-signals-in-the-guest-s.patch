@@ -10,7 +10,6 @@ sigsuspend() mask a signal FEX needs delivered to itself. The host kernel then
 kept it pending forever and the guest never saw it. GuestSigProcmask and the
 handler-entry path already skip these signals; do the same here.
 
-Co-Authored-By: Claude Code <noreply@anthropic.com>
 ---
  .../LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp | 12 +++++++-----
  1 file changed, 7 insertions(+), 5 deletions(-)

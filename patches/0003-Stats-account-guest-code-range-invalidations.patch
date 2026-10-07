@@ -13,7 +13,6 @@ the locks), and the number of call-return shadow stacks that were dropped. The s
 the header carries the slot size, readers keep working.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01FqdaKHgdwtnxZMQmFK7gnx
 ---
  FEXCore/Source/Interface/Core/Core.cpp         |  1 +
  FEXCore/include/FEXCore/Utils/SHMStats.h       |  7 ++++++-

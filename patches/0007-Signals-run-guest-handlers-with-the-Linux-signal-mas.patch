@@ -22,7 +22,6 @@ made inside a handler and kill/tkill/tgkill into a lock-free ring in /dev/shm/fe
 a signal from sender to handler.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01FqdaKHgdwtnxZMQmFK7gnx
 ---
  .../Source/Interface/Config/Config.json.in    | 19 ++++++
  .../LinuxEmulation/ArchHelpers/MContext.h     |  2 +

@@ -14,7 +14,6 @@ processes of a Wine session), creates its record file lazily on the first trigge
 is attached (it would see every SIGPROF).
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01FqdaKHgdwtnxZMQmFK7gnx
 ---
  .../Source/Interface/Config/Config.json.in    |  17 +++
  Source/Tools/LinuxEmulation/CMakeLists.txt    |   1 +

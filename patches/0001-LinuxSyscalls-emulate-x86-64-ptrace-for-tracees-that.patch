@@ -16,7 +16,6 @@ translated code, /proc/<pid>/exe of an exec()ed tracee reads back the guest bina
 emulation off.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01FqdaKHgdwtnxZMQmFK7gnx
 ---
  Source/Tools/LinuxEmulation/CMakeLists.txt    |   1 +
  .../LinuxSyscalls/FileManagement.cpp          |  31 +

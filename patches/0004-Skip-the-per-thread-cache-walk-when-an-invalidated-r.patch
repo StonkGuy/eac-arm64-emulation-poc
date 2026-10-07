@@ -16,7 +16,6 @@ invalidated lazily through an epoch that the decoder compares before using its c
 Measured with a freestanding test (100k mprotect calls on a data page, 190 parked threads): 790 ms -> 32 ms.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01FqdaKHgdwtnxZMQmFK7gnx
 ---
  FEXCore/Source/Interface/Context/Context.h    |  8 +++++--
  FEXCore/Source/Interface/Core/Core.cpp        | 12 +++++++---
