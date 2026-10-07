@@ -71,6 +71,28 @@ Rosetta. Rosetta's advantages — hardware total-store-ordering (x86 memory sema
 * **The tooling is portable.** `tools/harness/*.py` are plain Python; the method (trace the wake-up, A/B the arms,
   decode the signal ring) applies wherever FEX runs.
 
+### Rosetta is *doubly* out, not just GPU-less
+
+Rosetta is not merely on a backend without 3D — it also **does not support `ptrace` for translated binaries** (attempts
+fail with "Couldn't get CS register: Input/output error"; blamed on being architectural, not a fixable bug:
+<https://abe.seclab-bonn.de/2026/posts/gdb_macs_2/>). That is fatal here for a second, independent reason: **patch 0001
+of this repository exists to emulate x86-64 `ptrace`**, because the EAC launcher injects its client into the game with
+it. A translator that cannot support `ptrace` cannot run that launcher regardless of graphics. So FEX is not a
+"slower-but-workable" substitute for Rosetta on this workload — it is the only translator that could support the
+launcher's `ptrace` injection at all. (Rosetta also fakes `uname`/`/proc/cpuinfo` as `VirtualApple`, and Apple has said
+general-purpose Rosetta runs only through macOS 27; the Linux-VM carve-out past that is not guaranteed. All further
+reasons not to build on it.)
+
+Translator speed on x86-64 → ARM64, as fractions of native (estimates from
+<https://tnk4on.github.io/libkrun-rosetta/> and a 7z cross-check at <https://box86.org/2022/03/box86-box64-vs-qemu-vs-fex-vs-rosetta2/>;
+**estimates, not controlled benchmarks**):
+
+| translator | vs native | GPU route it can use | `ptrace`? |
+|---|---|---|---|
+| Rosetta for Linux | ~70–80% | VZ only — **no 3D** | **no** |
+| FEX-Emu (this project) | ~50–70% | libkrun + Venus — **3D** | **yes** (patch 0001) |
+| Box64 | ~40–57% | libkrun + Venus — 3D | untested here |
+
 ## On hardening the VM
 
 Virtualisation can be hidden far better than the default, and "harden the guest until the hypervisor is invisible" is a
