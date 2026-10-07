@@ -84,6 +84,38 @@ real line of work. Two things to keep straight:
    a kernel driver. That cost is what makes the Windows-in-a-VM route slow *and* the one most likely to be detected; the
    Linux userspace path avoids both. This is the reason the project takes the Linux route.
 
+## The libkrun route — closer than it first looked
+
+The stack this repository runs on is **libkrun**: `muvm` (the micro-VM here) is a libkrun front-end ("the `muvm` binary
+uses libkrun to create microVMs"). libkrun runs on Linux via KVM and on macOS via Hypervisor.framework — the *same* VMM
+on both. And the macOS side is already demonstrated end to end: the `steamac` project (Valve's ARM64 SteamOS in a
+libkrun VM on Apple silicon) reports a verified pipeline of
+
+```
+x86-64 game → DXVK (Proton 11 ARM64, x86 via FEX) → Vulkan → Venus (virtio-gpu) → MoltenVK → Metal
+```
+
+with Vulkan 1.4 and the DXVK feature set present in the guest, running DX11 titles. That is **this project's
+architecture on macOS** — same VMM family, same FEX, same Proton/DXVK — with only the host graphics translation
+swapped (MoltenVK instead of native Vulkan). The GPU "blocker" in the UTM section above does not apply here: this route
+does not use UTM's backends at all, and it does not need Apple's ParavirtualizedGraphics (which is for macOS guests).
+
+Two consequences:
+
+* **The macOS port uses FEX, not Rosetta.** Rosetta is architecturally bound to Apple's `Virtualization.framework` and
+  cannot work with libkrun/Hypervisor.framework (Podman discussion #28297). So on the only macOS route that has both
+  translation *and* hardware 3D, x86-64 translation is done by **the same FEX binary this repository patches**. Our nine
+  patches are therefore the port's prerequisite, not a detail.
+* **D3DMetal and Rosetta belong to a different route.** They are for *native macOS Wine* (Game Porting Toolkit /
+  CrossOver), which cannot run the Linux/Proton EAC client and is the route EAC blocks. The workable macOS route is the
+  Linux-in-libkrun one, and it uses DXVK + Venus + FEX, not D3DMetal + Rosetta. The three-slot decomposition that
+  motivates the port still holds; the macOS vendors for those slots on the workable route are DXVK/Venus, FEX and Wine.
+
+The one thing `steamac` lists as out of scope is exactly what this project is about: "anti-cheat systems that block VMs
+won't work." But this repository already runs EAC inside a VM — the muvm/libkrun micro-VM — so "it is a VM" is not by
+itself fatal; the open question is only whether EAC's Linux client accepts a macOS-libkrun guest as it accepts an
+Asahi-muvm one. That is untested, and it is the single real unknown.
+
 ## Splitting the anti-cheat from the game: why it does not work
 
 A natural idea is to run the anti-cheat in its own small VM or container — a clean, real-looking environment — while
@@ -110,15 +142,18 @@ client + injected module," both in the same userspace, and they cannot be separa
 
 | | Feasible now? |
 |---|---|
-| macOS host, Linux arm64 guest, FEX + Wine/Proton + Venus | **partially** — CPU/API plausible, GPU is beta, and it is this project rebuilt with a slower translator |
-| macOS host, Linux arm64 guest, Rosetta + Wine/Proton + 3D | **no** — blocked by the UTM backend split (#7921) |
+| macOS host, Linux arm64 guest in **libkrun**, FEX + Wine/Proton + Venus | **closest** — prerequisites exist (`steamac`); the unknown is whether EAC's Linux client accepts a macOS-libkrun guest |
+| macOS host, Linux arm64 guest in UTM (QEMU backend), FEX + Venus | **partially** — plausible, beta GPU stack, same EAC unknown |
+| macOS host, Linux arm64 guest with Rosetta + 3D (UTM Apple backend) | **no** — UTM backend split (#7921); and Rosetta cannot work with libkrun at all |
+| macOS host, native Wine (GPTK/CrossOver) with D3DMetal | **no** — cannot run the Linux/Proton EAC client |
 | macOS host, Windows-in-a-VM, Windows-mode EAC | **no** — kernel-mode EAC under a hypervisor, double translation, VRChat refuses VMs |
 | EAC in its own small VM/container, game translated separately | **no** — EAC is injected into the game process; the halves cannot be split by a VM boundary |
 
 ## What would change the answer
 
-* **UTM gains virtio-gpu 3D on the Apple Virtualization backend** (#7921), so a Linux guest can have Rosetta *and*
-  Vulkan. That becomes the single macOS configuration that runs this stack unmodified, with a faster translator and no
-  muvm, and this repository's work applies directly.
+* **Someone tries the libkrun route and reports whether EAC's Linux client runs in a macOS-libkrun guest.** This is now
+  the decisive, and only remaining, question for a macOS port — everything else is demonstrated or mechanical.
+* **UTM gains virtio-gpu 3D on the Apple Virtualization backend** (#7921), which would make the UTM-backed variant
+  first-class — though it still cannot use Rosetta with libkrun.
 * **A native macOS build of VRChat with native EAC** (Epic supports native macOS builds of games; VRChat has none). That
   removes emulation entirely and is the only path with no translation layer — out of scope here.
