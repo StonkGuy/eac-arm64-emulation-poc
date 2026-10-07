@@ -13,6 +13,20 @@ two X11 helpers. They were written for the measurements in this repository; each
 | `resolve_samples.py TAG FEX_UNSTRIPPED` | Resolves the output of FEX's in-process sampling profiler (patch 0005) to host symbols and guest modules; see [how-it-works.md](how-it-works.md). |
 | `mdparse.py` | Summarises a Windows minidump (exception record, faulting module+offset, registers, stack module hits), for crash dumps from the Unity crash handler. |
 
+## Host power / throttle (run on the host, Asahi)
+
+These make the *host* the thing under measurement. They exist to check the claim in [status.md](status.md) that the
+frame-rate dips are a host power-budget throttle, and to test for it on your own machine.
+
+| tool | what it does |
+|---|---|
+| `canary.c` | A fixed-work CPU probe: a dependent integer chain timed every 0.5 s. Run it pinned to a performance core next to the game (`taskset -c 6 ./canary 120`) and its printed nanoseconds-per-run show directly when the core slows down. Build: `gcc -O1 -o canary canary.c`. |
+| `powertl.py SECONDS OUTFILE` | Logs the Apple SMC's power/voltage/current/temperature readings twice a second on Asahi (`macsmc_hwmon` + battery). |
+| `check-power.py [SECONDS]` | Loads every performance core for ~40 s and prints a verdict: whether the power source (charger/hub/port) is strong enough, and whether the SoC throttles to the adapter limit under load. |
+
+`scripts/cpu-power.sh` is the *policy* side (root, runtime only): `status`, `cap MHZ` (limit the performance cluster's
+maximum clock for a fanless machine), `governor NAME`, `revert`. See [tuning.md](tuning.md).
+
 ## Wedge and disconnect analysis (`tools/harness/`)
 
 | tool | what it does |

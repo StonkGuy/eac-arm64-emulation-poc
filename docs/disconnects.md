@@ -116,12 +116,16 @@ session with the fix behaved differently from the unpatched ones in any other wa
 
 ## The pre-join stall is something else
 
-A **rare pre-join stall** (~1 session in 5) looks nothing like the time-out and is **not fixed by the mask fix**. In this stall
+A **pre-join stall** looks nothing like the time-out and is **not fixed by the mask fix**. A census of **99 sessions**
+puts its rate at **~8 in 99 (≈8 %), not "1 in 5"**, and it arrives in **batches** rather than uniformly. In this stall
 the VRChat log goes silent for **~60 s** between `Successfully connected to Stomp` and `Destination fetching`
 (healthy sessions take ~1 s), then switches region with the Photon client stuck in `current state: Disconnecting`
 (healthy: `ConnectedToNameServer`), fails with `Failed to connect to region, status was: Disconnecting`, and retries every
-~31 s. Sometimes it resolves slowly and the session proceeds; sometimes it loops. It happens in **both** arms of the A/B
-(`ab54`/`ab59` control, `ab62` with `FEX_SIGNALMASKFIX=1`), so it is not the signal-mask bug.
+~31 s. Sometimes it resolves slowly and the session proceeds; sometimes it loops. It has **two shapes**: most sessions
+stall *before* `Destination fetching`, one observed *between* `Destination fetching` and `Destination set`. The string
+`current state: Disconnecting` is a **perfect marker** — exactly the stalling sessions print it, and every other session
+opens with `ConnectedToNameServer`. It happens in **both** arms of the A/B (`ab54`/`ab59` control, `ab62` with
+`FEX_SIGNALMASKFIX=1`), so it is not the signal-mask bug.
 
 A thread snapshot taken at the stall (no ptrace, `FEX_PROFILESAMPLEHZ=1`) shows:
 

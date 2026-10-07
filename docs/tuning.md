@@ -69,6 +69,27 @@ FEX's in-process sampling profiler (`patches/0005`, `tools/resolve_samples.py`) 
 On a 4-vCPU guest the Unity main thread (≈75 %), Wine's `wine64` server thread (≈60 %) and a thread named `Security`
 (≈35 %) dominate.
 
+## 6. Host power and throttling
+
+The frame-rate dips are **not** emulation: a fixed-work probe (`tools/canary.c`) run next to the game slows to **3.16× /
+5.25× / 4.84×** its normal time inside the three dip windows, while the SoC collapses from ~22.4 W to ~11.9 W (system) and
+~12.8 W to ~5.4 W (heat). FEX's own counters are flat across a dip and no memory stall is involved, so nothing in the guest
+or the translator is implicated. The trigger is the **power source**, not temperature: it fires on AC, at only ~56 °C SMC,
+because this machine is taking more than the adapter supplies and the firmware clamps it in bursts.
+
+To check your own setup:
+
+* `tools/check-power.py` loads every performance core and reports whether the charger/port/hub is strong enough (a MacBook
+  Air M2 under a game wants ~25–30 W; the 30 W charger in the Mac's own port, or MagSafe, no hub and no PC USB port).
+* `tools/powertl.py SECONDS OUT` records the SMC power/temperature timeline next to a run.
+* `sudo scripts/cpu-power.sh cap MHZ` keeps the performance cluster below a fixed clock so the fanless SoC never reaches the
+  firmware's clamp point — the trade is less peak speed for a flatter frame rate. `scripts/cpu-power.sh` is runtime-only and
+  `revert` undoes it.
+
+macOS does closed-loop thermal control for the SoC; Linux does not, so this class of throttle is an OS/firmware behaviour you
+have to manage yourself on Asahi. A frame rate that swings between ~45 and ~20 FPS with the same period as the power reading
+is the signature.
+
 ## Open issues
 
-See [status.md](status.md): the start-up hang.
+See [status.md](status.md): the pre-join stall (~8 % of sessions) and the unverified items.
