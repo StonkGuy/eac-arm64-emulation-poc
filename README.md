@@ -8,6 +8,8 @@ bring up one x86-64 game with Epic's Easy Anti-Cheat for Linux/Proton on an arm6
 files you can apply yourself, with the tests that show what each one fixes and the diagnostic tools that found the
 problems.
 
+![VRChat running on an Apple M2 under Fedora Asahi Remix through the patched FEX-Emu, beside a `fastfetch` of the host](docs/img/vrchat-m2.png)
+
 It is deliberately **one game on one machine** (VRChat on an Apple M2 under Fedora Asahi Remix, inside a [muvm](https://github.com/AsahiLinux/muvm)
 micro-VM). Treat it as a starting point. **Fork it and take it further** — another game, another SoC, or turning the
 signal fixes into something upstreamable. Nothing here is submitted to, or a proposal for, the FEX or Proton projects;
