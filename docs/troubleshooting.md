@@ -40,6 +40,12 @@ patched build (note that binfmt handlers pin the interpreter inode: restart the 
 Never leave `WINEDEBUG` trace channels or FEX logging knobs on while testing EAC: they change timing and have crashed the
 game.
 
+**EAC says 301, but the game dies ~3 s later and no new `output_log_*.txt` appears.** The Proton log (if enabled) shows
+`err:virtual:virtual_setup_exception nested exception on signal stack` while `VRChat.exe` loads `kernel32.dll`. Seen with
+the launch options `WINEDEBUG=err+all,+loaddll,+module,+seh PROTON_LOG=1 FEXHOTMEMFD=1`, on three different FEX builds;
+restoring the plain launch options (`scripts/set-launch-options.sh`, `WINEDEBUG=-all`) fixed it at once. Check the
+launch options first; do not swap FEX builds for this symptom.
+
 **Never attach a debugger, `perf` or an strace-like tool to the running game.** EAC reports it as
 "Debugger detected" and keeps reporting; use `docs/how-it-works.md` (in-process sampler) instead.
 

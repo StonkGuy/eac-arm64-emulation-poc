@@ -69,10 +69,10 @@ scripts/vm/install-overlay.sh
 (cd tests/signal-regs && ./build.sh clang)            # run it in the VM too; passes with patch 0008
 sudo scripts/host-tune.sh                             # memory tuning (optional, strongly recommended on 16 GB)
 scripts/set-launch-options.sh                         # with Steam closed
-scripts/vm/steam-vm.sh                                # start Steam inside the VM, then launch VRChat from it
+REALISM=1 VM_MEM_MB=10240 VM_VRAM_MB=3072 scripts/vm/steam-vm.sh   # start Steam in the VM (verified config), then launch VRChat
 ```
 
-Details: [docs/setup-asahi.md](docs/setup-asahi.md). Tools: [docs/tools.md](docs/tools.md). What works and what is
+Full A-to-Z guide, the exact verified versions and what breaks a working setup: [docs/setup-asahi.md](docs/setup-asahi.md). Tools: [docs/tools.md](docs/tools.md). What works and what is
 open: [docs/status.md](docs/status.md).
 
 ## What this is not
