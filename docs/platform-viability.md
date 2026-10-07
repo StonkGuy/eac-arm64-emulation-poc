@@ -214,9 +214,14 @@ The stack is real; the anti-cheat question is not answered by it, and its author
 
 * Its **only** statement about anti-cheat is "anti-cheat systems that block VMs will not work." There is no EAC-specific
   work, no VM-identity masking, and no issue or discussion suggesting otherwise.
-* **DX12 is capped at feature level 11_0 / shader model 6.0** (MoltenVK; no tiled resources, no SM 6.6). Many modern
-  EAC titles need more. (The Russian README claims 12_0 on KosmicKrisp; the English README and the docs site still say
-  11_0, so treat 11_0 as current.)
+* **DX12 is capped at feature level 11_0 / shader model 6.0 on MoltenVK** (the more mature driver), **12_0 on
+  KosmicKrisp** (the newer Mesa Vulkan-on-Metal driver, macOS 26+); neither has SM 6.2+ or Tiled Resources Tier 3. Many
+  modern EAC titles need more. The cap is the host driver's, not the protocol's: Venus nominally exposes Vulkan 1.4, but
+  the guest's effective feature set is whatever MoltenVK/KosmicKrisp implements (Venus serializes commands; the host
+  driver runs them).
+* **The host graphics stack is patched, not upstream.** `steamac` reports all the DXVK 3.x features visible *only* with a
+  **forked MoltenVK** (UTM's, adding geometry shaders and `robustness2`) plus a patched Mesa in the guest. Upstream
+  MoltenVK still does not implement geometry shaders (open since 2022), so the fork is a requirement, not a convenience.
 * It does **not pin a FEX or EAC version** — FEX is Valve's, shipped inside Proton 11 ARM64, and whether the ARM64
   SteamOS image even carries Valve's EAC runtime is unaddressed.
 * It is **days old**, demonstrates only three or four games in short offline sessions, and has no compatibility list.
