@@ -1,0 +1,10 @@
+work/
+build/
+out/
+*.o
+*.dmp
+*.log
+__pycache__/
+*.pyc
+tests/*/*_test
+tests/ptrace-inject/ptrace_inject_test
