@@ -1,6 +1,6 @@
 # The patch series
 
-Nine patches against **FEX-Emu 2609.1** (base commit `9fbdc00`). They are not all the same kind of thing, so they are
+Ten patches against **FEX-Emu 2609.1** (base commit `9fbdc00`). They are not all the same kind of thing, so they are
 grouped here by what they are for:
 
 | group | patches | what it is |
@@ -8,7 +8,7 @@ grouped here by what they are for:
 | **A. Faithful `ptrace`** | 0001 | the change that lets the anti-cheat launcher inject its client at all |
 | **B. Signal fidelity** | 0007, 0008, 0009 | guest signal handlers must behave like Linux; this is what fixed the disconnects |
 | **C. Code-invalidation cost** | 0002, 0004 | performance in a process with ~200 threads |
-| **D. Diagnostics** | 0003, 0005, 0006 | **not fixes** — tools that made the bugs visible without ptrace |
+| **D. Diagnostics** | 0003, 0005, 0006, 0010 | **not fixes** — tools that made the bugs visible without ptrace |
 
 Only group B and patch 0001 are required to run; group C is performance, group D is instrumentation you can drop.
 
@@ -140,6 +140,12 @@ debugger. Include them if you want to reproduce the analysis; drop them for a mi
 * **0006 — all-thread snapshot.** `touch /dev/shm/fex-<pid>-snapshot` records every thread's x86 registers and stack
   once, so a *blocked* thread (which the sampler never sees) can be read; `tools/harness/resolve_snap.py` decodes it.
   This is what identified the parked-by-the-wait-pipe threads behind the disconnects.
+* **0010 — futex word in the snapshot.** Extends 0006's record from 80 to 160 words: for a thread blocked in
+  `futex`/`futex_waitv` it also stores the futex word, the value the wait started with, and the address. That is what
+  separates *nobody woke it* (the word still equals the expected value) from *the wake-up was lost* (the word changed
+  but the thread still sleeps) — the distinction the pre-join stall hung on. `resolve_snap.py` accepts both record
+  sizes. (**Note:** the original known-good build carried this diagnostic as an uncommitted source edit; 0010 makes it
+  reproducible from the patch series.)
 
 ---
 
