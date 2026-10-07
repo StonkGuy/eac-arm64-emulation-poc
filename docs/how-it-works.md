@@ -102,9 +102,13 @@ Two things to keep straight about it:
 * Whether it is **still needed once the ptrace emulation is faithful has not been verified** (see `docs/status.md`),
   and it is not needed to reproduce the emulation work.
 
-The upstream fact that makes this a separate question: **EAC tolerates virtual machines when it recognises the
-environment.** VRChat itself runs on GeForce NOW's cloud VMs, so "EAC refuses VMs" is really "EAC's default check
-refuses an *unrecognised* VM." VRChat does not support VMs; you can be banned.
+The upstream fact that makes this a separate question: **VRChat's own guide reports that EAC's VM block is a check on
+the environment, not an absolute one**, and that the recognised-environment route can work ("in some cases… we don't
+mind"). So "EAC refuses VMs" is more precisely "EAC's default check refuses a VM it does not recognise." Two cautions
+on how far to read that: the quote is from VRChat about EAC's *check*, not a statement that Epic supports VMs — Epic's
+documentation still says the Anti-Cheat Client interface "does not support virtual machines" with no Linux exception —
+and the cloud-VM cases (VRChat runs on GeForce NOW's cloud VMs) are publisher/provider arrangements, not evidence that
+EAC tolerates arbitrary user VMs. VRChat does not support VMs; you can be banned.
 
 ## Cheap invalidation for many threads (`patches/0003`, `0004`)
 

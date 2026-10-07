@@ -62,9 +62,12 @@ driver now running against a virtualized kernel. VRChat's client also refuses a 
 hypervisor check fires (`VRChat cannot run in Virtual Machine`). Windows-in-a-VM on a Mac is therefore not a path.
 
 The **Linux/Proton** mode is different: there is no kernel driver, and Epic enabled a *native Linux userspace EAC
-client* that the Windows EAC binary talks to under Wine/Proton. That is the mode this repository targets: EAC ships **no
-ARM build** of it, so on an arm64 host it runs as x86-64 code under the translator (FEX here). Windows-in-a-VM does not
-run it.
+client* that the Windows EAC binary talks to under Wine/Proton. That is the mode this repository targets: the Proton
+EasyAntiCheat Runtime Valve ships (Steam appid 1826330) is **x86-64 only**, and VRChat ships no Arm64-aware EAC
+bootstrapper, so on an arm64 host the EAC client that runs is x86-64 code under the translator (FEX here).
+Windows-in-a-VM does not run it. (A caveat for completeness: Epic has added Linux **Arm64** support to the *EOS SDK*
+— noted in SDK 1.16.4 and 1.17.1.3 — but the EOS anti-cheat docs still list the Anti-Cheat Client Interface as
+unsupported on Linux ARM64, and it is a per-title opt-in that no VRChat user has reported being in use.)
 
 ### 2. Fast translation and hardware 3D live on different UTM backends
 
@@ -158,9 +161,15 @@ benchmark table, TOSTING, Proton-11-ARM game reports).
 Virtualisation can be hidden far better than the default, and "harden the guest until the hypervisor is invisible" is a
 real line of work. Two things to keep straight:
 
-1. **In the Linux/Proton mode the VM is not the fight.** The anti-cheat there is a *userspace* client, and the reports
-   in this repository are about making FEX behave like a real Linux kernel — not about defeating a hypervisor check. A
-   hardened guest is compatible with this project's approach; it does not replace it.
+1. **In the Linux/Proton mode it is not clear the VM is the fight — but that is an inference, not a fact.** The
+   anti-cheat there is a *userspace* client, and this repository's work is about making FEX behave like a real Linux
+   kernel, not about defeating a hypervisor check. But be precise about the evidence: **EAC's Linux-mode VM checks are
+   undocumented and have not been publicly reverse-engineered** — Epic's "the Anti-Cheat Client Interface does not
+   support virtual machines" is a blanket statement with no Linux carve-out — and the *only* known data point of EAC's
+   Linux client running inside a Linux guest VM is this repository's own Asahi/muvm run, on one machine, where whether
+   `realism.sh` (DMI/PCI/hostname) is still load-bearing is itself flagged unverified. So "the VM is not the fight" is
+   our reading of a single case, not an established property of the Linux client. The Windows kernel-mode client's
+   anti-VM checks, by contrast, *are* well documented (see §1).
 2. **Emulating a whole Windows kernel to satisfy the Windows-mode client is the expensive part.** Running Windows under
    any of this stacks a second translation layer (x86 game → Prism → ARM Windows → host) and a virtualized kernel under
    a kernel driver. That cost is what makes the Windows-in-a-VM route slow *and* the one most likely to be detected; the
@@ -290,6 +299,10 @@ take it.
   first-class — though it still cannot use Rosetta with libkrun.
 * **A native macOS build of VRChat with native EAC** (Epic supports native macOS builds of games; VRChat has none). That
   removes emulation entirely and is the only path with no translation layer — out of scope here.
+* **VRChat shipping an Arm64-aware EAC bootstrapper.** VRChat's first-party answer for arm64 today is the **Android
+  build** on standalone headsets (their own Steam Frame page: "the PC version of VRChat is not supported as a standalone
+  option on the Steam Frame"). If they ever ship the Windows/PC build with an Arm64-aware EAC client — which Epic's SDK
+  now makes possible per-title — the emulation question changes entirely.
 
 ## Sources for the cited claims
 
@@ -306,7 +319,11 @@ Pointers, not endorsements — we read these, we did not reproduce most of them:
 * FEX page-size constraint (4 KB host), microVM as the fix — FEX issues #3496, #1921 ("not planned"), #1650 ("muvm")
 * FEX cannot run EasyAntiCheat out of the box; `ptrace` fidelity is the gap — <https://github.com/FEX-Emu/FEX/issues/4348> (open)
 * Proton EasyAntiCheat Runtime is x86-64 only (no ARM depot) — Steam appid 1826330
-* Epic EOS Anti-Cheat: client unsupported on "Linux ARM64 (Anti-Cheat Client Interface)" — <https://dev.epicgames.com/docs/game-services/anti-cheat>
-* VRChat, "Using VRChat in a Virtual Machine" (EAC's VM block is the CPUID hypervisor-vendor check; tolerated but unsupported)
+* Epic EOS Anti-Cheat Interfaces: client "does not support virtual machines (VM)" (blanket); unsupported platforms include "Linux ARM64 (Anti-Cheat Client Interface)" — <https://dev.epicgames.com/docs/epic-online-services/trust-and-safety/anti-cheat-interfaces/anti-cheat-interfaces>
+* Steamworks Proton doc: kernel-space anti-cheat "not currently supported… user-space components for Wine" — <https://partner.steamgames.com/doc/steamhardware/proton>
+* Windows-mode EAC anti-VM checks (CPUID hypervisor bit + leaf `0x40000000`, MSR/timing/descriptor, TPM/HWID) — <https://rstforums.com/forum/topic/112809-how-anti-cheats-detect-system-emulation/>, <https://github.com/goldzik1/eac-eos-driver-analysis>
+* VRChat, "Using VRChat in a Virtual Machine" (EAC's VM block is the CPUID hypervisor-vendor check; tolerated but unsupported) — <https://docs.vrchat.com/docs/using-vrchat-in-a-virtual-machine>
+* VRChat on the Steam Frame (first-party: PC build not supported standalone; the Android build is) — <https://help.vrchat.com/hc/en-us/articles/55751011246995-Is-VRChat-supported-on-the-Steam-Frame>
+* Valve Steam Frame compatibility (Proton + FEX default for Windows x86 titles) — <https://partner.steamgames.com/doc/steamhardware/steamframe/compatibility>
 * Translator speed estimates — <https://tnk4on.github.io/libkrun-rosetta/>, <https://box86.org/2022/03/box86-box64-vs-qemu-vs-fex-vs-rosetta2/>
 * FEX software-TSO worst case — <https://github.com/FEX-Emu/FEX/discussions/5349>
