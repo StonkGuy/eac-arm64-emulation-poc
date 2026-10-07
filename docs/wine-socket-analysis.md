@@ -65,6 +65,20 @@ so healthy baselines do carry a few of these lines. Across the captures:
 Two sockets in event-select mode go stale **together**, at the same protocol message. That is the signature of one
 selector thread that stopped draining both, not of two independent per-socket bugs.
 
+### The sockets stay stuck over ~2 s and are dropped without ever being read
+
+The first stall of the `PROTON_NO_FSYNC` arm (`snof2`) has two snapshots ~2 s apart:
+
+| socket | snapshot 1 | snapshot 2 |
+|---|---|---|
+| Photon NameServer `216.120.180.19:443` | `ESTAB`, Recv-Q **49**, epoll `0x1a` | **`CLOSE-WAIT`**, Recv-Q **0** — FIN received, 49 B discarded unread |
+| VRChat API `[2606:4700::6812:1a24]:443` | `ESTAB`, Recv-Q **46**, `bytes_received` 8925, `lastrcv` ≈ **2.7 s**, epoll `0x1a` | `ESTAB`, Recv-Q **92**, `bytes_received` 9039 (90 more bytes arrived) |
+
+Both stay in `0x1a` with data queued for the whole interval: the reader never drains them, the NameServer eventually
+sends FIN, and the 49 queued bytes are thrown away when the socket closes. The API socket gains 90 more bytes over the
+same interval and is still not read. So the stall is not a one-tick scheduling hiccup — the read side is genuinely
+stalled, and the client recovers only by tearing the connection down and retrying (the ~31 s region retry).
+
 ## The two candidate mechanisms still standing
 
 * **The selector thread was not woken (favoured).** `post_socket_event` set the event, but the IL2CPP selector thread
