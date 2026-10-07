@@ -186,14 +186,28 @@ it for 61 s. The socket state at that instant:
   not the stall (their `last*` ages predate the stall by minutes).
 
 So the stall is a **cause, not a transport failure**: a server-side/EOS state transition (the websocket FIN, then a join
-handshake the client never starts) hits the same client-side reply-pipe wedge. Two candidate triggers, both testable
-without ptrace:
+handshake the client never starts) hits the same client-side reply-pipe wedge. The remaining candidate is the EOS SDK
+config / Stomp reconnect (`ScheduleNextSDKConfigDataUpdate … Update Interval: 310.58` is always printed at this point; if
+the update lands during the transition the client may be juggling Stomp and the world fetch at once). Wine's fsync mode
+was tested and **rejected** as a fix — see below.
 
-1. **`PROTON_NO_FSYNC`** — the reproducer above wedges with Wine fsync (server-side waits) and **not** without it, so the
-   EOS/websocket threads that block in server-side async I/O are exactly the ones whose completion is lost. Untested on
-   the real game for the *stall* (only for the time-out).
-2. **EOS SDK config / Stomp reconnect** — `ScheduleNextSDKConfigDataUpdate … Update Interval: 310.58` is always printed at
-   this point; if the update lands during the transition the client may be juggling Stomp and the world fetch at once.
+### `PROTON_NO_FSYNC` makes the stall *worse*, not better (interleaved A/B)
+
+The standalone reproducer ([Reproduced outside the game](#reproduced-outside-the-game)) wedges under Wine fsync but never
+with `PROTON_NO_FSYNC=1`, which suggested running the game without fsync to remove the stall. An interleaved A/B in one VM
+(16 launches planned, arms `ctl` and `nof` alternating every launch, 150 s each, arm injected through Proton's
+`user_settings.py`) gives the opposite answer. The batch stopped itself at session 15 when the Steam account went in-game
+on the user's other PC, leaving a clean **7 pairs (14 sessions, carried from 19:13 to 19:47)**:
+
+| arm | joined | stalled |
+|---|---|---|
+| `ctl` (Wine fsync, Proton default) | **7** | **0** |
+| `nof` (`PROTON_NO_FSYNC=1`) | **3** | **4** |
+
+Both stall shapes appeared in the `nof` arm (2 quiet hangs before `Destination fetching`, 2 the `Switching to network
+region eu (current state: Disconnecting)` → 31 s retry shape). So on the real game the server-side-wait mode is *worse*
+for the stall — the reproducer's fsync result does not transfer. **Keep the Proton default (fsync); do not set
+`PROTON_NO_FSYNC`.**
 
 ### MTU was necessary but not sufficient (and a WiFi-power-save candidate)
 
