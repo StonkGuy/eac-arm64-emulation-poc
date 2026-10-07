@@ -8,6 +8,15 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 
 /usr/sbin/sysctl -w vm.max_map_count=1048576 >/dev/null 2>&1
 
+# The virtio-NIC comes up with a 64 KB MTU (guest-to-host loopback can take it, the real path to the
+# internet cannot). Left alone, TCP emits ~43 KB super-segments that arrive as fragments and get
+# retransmitted, and large UDP datagrams are dropped - seen as stutter and as an intermittent ~60 s
+# stall in Photon's region lookup (ns.photonengine.io). Set the guest MTU to the real path MTU.
+for IF in $(ls /sys/class/net 2>/dev/null | grep -v '^lo$'); do
+  [ "$(cat /sys/class/net/$IF/mtu 2>/dev/null)" -gt 1500 ] 2>/dev/null && \
+    ip link set dev "$IF" mtu 1500 >/dev/null 2>&1
+done
+
 # binfmt_misc handlers are registered with flag F (the interpreter inode is pinned), so swap them for the patched binary
 if [ -n "${FEX_OVERLAY_BIN:-}" ] && [ -x "$FEX_OVERLAY_BIN" ]; then
   for n in x86 x86_64; do
