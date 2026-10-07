@@ -93,6 +93,29 @@ Translator speed on x86-64 → ARM64, as fractions of native (estimates from
 | FEX-Emu (this project) | ~50–70% | libkrun + Venus — **3D** | **yes** (patch 0001) |
 | Box64 | ~40–57% | libkrun + Venus — 3D | untested here |
 
+### Performance expectation (extrapolated, wide bands)
+
+**No VRChat-specific benchmark exists under FEX+Proton on ARM64, and no FEX-vs-Rosetta head-to-head exists on identical
+M-series hardware.** The following is composed from measured building blocks and should be read as an order-of-magnitude
+estimate, not a prediction:
+
+* **CPU translation:** FEX ≈ 50–80% of native on M-series (Rosetta ≈ 70–80%). Ordering — native > Rosetta > FEX+Proton —
+  is well supported; the magnitudes are not. FEX's own worst case is far worse than Rosetta's (a documented ~9× cliff
+  when TSO emulation is left fully on in a lock-heavy scene: <https://github.com/FEX-Emu/FEX/discussions/5349>).
+* **The reason Rosetta wins is hardware TSO.** Apple silicon implements x86's total-store-ordering in hardware, so
+  Rosetta does not pay FEX's software-TSO tax (hardware-TSO cost on M1 ≈ 8.9%: Wrenger, JSA 2024). On a system *without*
+  Rosetta (libkrun, this route), FEX pays it in software. This is the single largest emulation cost and it is
+  unavoidable on the macOS-libkrun route.
+* **GPU layer:** no quantified MoltenVK-vs-native-Metal or D3DMetal-vs-DXVK FPS figures exist publicly; treat graphics
+  overhead as unmeasured.
+* **Thermals:** a fanless MacBook Air M2 sustains ~10–25% below peak under 20–30-minute loads, so a session settles
+  below its initial rate regardless of the stack.
+
+A native-x86 scene that runs 60 FPS on a comparable desktop extrapolates to roughly **35–50 FPS typical** through
+FEX+Proton on M-series (band ~25–55; floor ~15–25 in a TSO-heavy, throttled case). All of this is extrapolated from
+other games and microbenchmarks — see the sources gathered for this section (FEX "Scourge of emulation", box86.org
+benchmark table, TOSTING, Proton-11-ARM game reports).
+
 ## On hardening the VM
 
 Virtualisation can be hidden far better than the default, and "harden the guest until the hypervisor is invisible" is a
