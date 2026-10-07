@@ -116,21 +116,41 @@ def _plausible(rec):
 f1280, f640 = _plausible(1280), _plausible(640)
 if f1280[0] < 0 and f640[0] < 0:
     sys.exit('snapshot size %d is not a whole number of 640- or 1280-byte records' % len(snap))
-REC = 1280 if (f1280[0] >= f640[0]) else 640
+# The profiler's MaxSnaps is 1024, so a full snapshot is exactly 1024 records: file size / 1024 is the record size.
+# Prefer that (plausibility alone cannot separate the two when the misaligned stride also looks plausible).
+if len(snap) % 1280 == 0 and len(snap) // 1280 == 1024:
+    REC = 1280
+elif len(snap) % 640 == 0 and len(snap) // 640 == 1024:
+    REC = 640
+else:
+    REC = 1280 if (f1280[0] >= f640[0]) else 640
 WORDS = REC // 8
 n = len(snap) // REC
 print('%d thread records (record %d B)' % (sum(1 for i in range(n) if struct.unpack_from('<Q', snap, i * REC)[0]), REC))
+# Layouts (from patches 0006 and 0010):
+#   640 B  (=80 words):  Tid HostPC Rip Spare Gregs[16] Stack[60]
+#   1280 B (=160 words): Tid HostPC Rip FutexWord FutexExpected FutexAddr Gregs[16] Stack[138]
+# Gregs order: rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15
+if REC == 1280:
+    GOFF, SOFF, FW = 6, 22, (3, 4)
+else:
+    GOFF, SOFF, FW = 4, 20, None
 for i in range(n):
     f = struct.unpack_from('<%dQ' % WORDS, snap, i * REC)
     tid = f[0]
     if not tid: continue
-    rip, g, stack = f[2], f[4:20], f[20:80]
+    rip, g, stack = f[2], f[GOFF:GOFF + 16], f[SOFF:SOFF + (WORDS - SOFF)]
     rax = g[0]; args = (g[7], g[6], g[2], g[10], g[8], g[9])
     print('\ntid %d  %s' % (tid, names.get(tid, '')))
     nm = SYS.get(rax)
     if nm:
         extra = ''
         if nm == 'futex': extra = ' op=%s' % FUTEX_OPS.get(args[1] & 0xff | (args[1] & 0x80), args[1])
+        if FW is not None:
+            fw = f[FW[0]]
+            if fw >> 63:
+                w, e = fw & 0xffffffff, f[FW[1]] & 0xffffffff
+                extra += ' word=%d expected=%d %s' % (w, e, 'EQUAL (nobody woke it)' if w == e else 'DIFF (lost wake-up?)')
         print('  syscall %s(%s)%s' % (nm, ', '.join('0x%x' % a for a in args[:4]), extra))
     else:
         print('  rax=0x%x (not a syscall: thread was running or in the middle of a block)' % rax)
