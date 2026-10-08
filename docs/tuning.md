@@ -1,8 +1,8 @@
 # Performance and memory tuning
 
 A 16 GB machine is tight: the VM's RAM, the GPU buffers (unified memory), Steam's web helpers, the game (4–5 GB) and the
-desktop all compete. The first thing that went wrong was *not* emulation speed but the host running out of memory:
-the kernel OOM-killed the whole VM ("the game crashed"). Order of importance:
+desktop all compete. The main constraint is host memory, not emulation speed: when it runs out, the kernel OOM-kills
+the whole VM ("the game crashed"). Order of importance:
 
 ## 1. Do not run the host out of memory
 
@@ -49,19 +49,15 @@ Micro-benchmark (`tests/bench`, M2 P-core, FEX default config):
 | 50M seq-cst atomics | did not finish (minutes) | 237 ms | 237 ms |
 | 100M indirect calls (4096 targets) | — | 2100 ms | — |
 
-FEX cache/JIT options on the indirect-call test (patched 2609.1): default 2100 ms, `FEX_DISABLEL2CACHE=0` 2021 ms (-4 %),
-`FEX_DYNAMICL1CACHE=0` 2111 ms, `FEX_MULTIBLOCK=0` 2849 ms (+36 %). None of them is a big lever.
-
 FEX enables Apple's *hardware* TSO mode by itself when the kernel offers `prctl(PR_SET_MEM_MODEL, PR_SET_MEM_MODEL_TSO)`.
 This works on the Asahi host and inside the muvm guest (checked with a 10-line C program on both), so x86 memory ordering
 already costs nothing in the JIT output. `FEX_TSOENABLED=0` therefore only changes the cost of the rare helper paths
-(`memcpy`-style ops, `getpid` above) and weakens the memory-ordering guarantees; it is not recommended.
+(`memcpy`-style ops, `getpid` above) and weakens the memory-ordering guarantees; keep the default.
 
 ## 4. Code invalidation with many threads
 
 `mprotect` on a data page, 100k calls, 190 parked guest threads: stock FEX 790 ms, with `patches/0004` 32 ms (the same
-as with no extra threads; ~25× on this `tests/bench` churn test — the ~22× quoted elsewhere is the per-call cost,
-7.9 µs vs 0.35 µs). Games with hundreds of threads that churn memory mappings (Unity, Wine, DXVK, anti-cheat) pay
+as with no extra threads; ~25× on this `tests/bench` churn test, ~22× per call: 7.9 µs vs 0.35 µs). Games with hundreds of threads that churn memory mappings (Unity, Wine, DXVK, anti-cheat) pay
 for this on every call.
 
 ## 5. Per-thread view while playing
@@ -72,14 +68,34 @@ FEX's in-process sampling profiler (`patches/0005`, `tools/resolve_samples.py`) 
 On a 4-vCPU guest the Unity main thread (≈75 %), Wine's `wine64` server thread (≈60 %) and a thread named `Security`
 (≈35 %) dominate.
 
-## 6. Host power and throttling
+## 6. CPU count: VM cores and reported CPUs
+
+**VM cores.** muvm gives the guest the host's performance cores only (4 on an M2). Adding efficiency cores was measured with
+16 CPUs reported to the game in each case, on AC:
+
+| VM cores (`muvm -c`) | time to world | FPS, high phase (p90) | share of time in the low phase |
+|---|---|---|---|
+| 4 P (default) | 25 s | 44.1 | 74 % |
+| 4 P + 2 E | 26 s | 43.5 | 57 % |
+| 4 P + 4 E | 47 s | 40.3 | 79 % |
+
+Two efficiency cores change nothing measurable (the low-phase share follows the power state, see section 7); four make
+loading almost twice as slow and lower the frame rate. Keep muvm's default.
+
+**Reported CPUs.** `WINE_CPU_TOPOLOGY` (set by `scripts/set-launch-options.sh`) makes Windows code see more CPUs than the
+VM has; it is what prevents the pre-join stall ([disconnects.md](disconnects.md#the-pre-join-stall-il2cpp-thread-pool-starvation)).
+Reporting 6, 10 or 16 CPUs on the 4-core VM gave the same frame rate as the default 4 (42–45 FPS in the high phase of
+every run), and worlds load at least as fast: a median of 25 s over 11 launches with 16 reported against
+25–36 s with the default. 16 is the setting, since the thread pool that starves sizes itself from this number.
+
+## 7. Host power and throttling
 
 The frame-rate dips are **not** emulation. The frame rate alternates between ~44 FPS (for ~8–18 s) and ~19–20 FPS (for
 ~8–13 s), with a dominant period of ~39–44 s. A fixed-work probe (`tools/canary.c`, which prints the nanoseconds each
 fixed unit of work takes, so a larger number means a slower core) pinned to a performance core next to the game runs
 ~4.1× slower in the low phase, while the SoC's system power falls to 0.67× and its heat output to 0.41× (the wall AC draw
 stays constant). These are means over the later 240 s captures split by frame-rate mode; the per-dip figures in
-[status.md](status.md) (3.2–5.3×, 22.4 → 11.9 W) come from three dips of one earlier capture and agree with them. FEX's own counters (`fexstats`: invalidation/SMC) are flat across a dip and no memory stall is involved,
+[status.md](status.md) (3.2–5.3×, 22.4 → 11.9 W) come from three dips in an earlier capture and agree with them. FEX's own counters (`fexstats`: invalidation/SMC) are flat across a dip and no memory stall is involved,
 so nothing in the guest or the translator is implicated. It is a **sub-OS hardware clamp**: the OS's frequency readings
 look normal throughout. The trigger is the **power budget**, not temperature: it fires on AC, at only ~56 °C SMC, because
 this machine is taking more than the adapter supplies and the firmware clamps it in bursts.

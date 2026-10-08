@@ -2,7 +2,8 @@
 # OPTIONAL, runs as root inside the VM. Makes the guest look less like a microVM to software that checks, following the
 # hardware-realism advice in VRChat's "Using VRChat in a Virtual Machine" guide: plausible SMBIOS/DMI strings, a PCI device
 # list, a systemd-looking PID 1 and a desktop-style hostname. It does not touch the anti-cheat or its results.
-# Override values through environment variables (REALISM_*). Unverified whether it is still necessary; see docs/status.md.
+# Override values through environment variables (REALISM_*). Optional for VRChat; may be useful for other games whose
+# anti-cheat inspects the hardware identity.
 set -u
 R=${REALISM_DIR:-/tmp/vrchat-fex-eac-realism}
 rm -rf "$R"; mkdir -p "$R/virt/dmi/id" "$R/class/dmi/id" "$R/pci"

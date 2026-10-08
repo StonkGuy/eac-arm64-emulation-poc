@@ -121,7 +121,7 @@ and dropped call-return stacks per thread); `0004` skips the per-thread walk whe
 range and invalidates the per-thread executable-range caches lazily with an epoch. `tests/bench` has the churn test
 (`EXTRA="-DINVAL_MODE=1 -DINVAL_THREADS=190" ./build.sh`).
 
-## Profiling a game that detects debuggers (`patches/0005`)
+## Profiling a game that detects debuggers (`patches/0005`, `0006`)
 
 Attaching `ptrace`/`perf` to a process running Easy Anti-Cheat is detected at once ("Forbidden system configuration
 (Debugger detected.)") and must not be attempted. `FEX_PROFILESAMPLEHZ=<hz>` (with `FEX_PROFILESAMPLEALLTHREADS=1` and

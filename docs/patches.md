@@ -8,11 +8,12 @@ grouped here by what they are for:
 |---|---|---|
 | **A. Faithful `ptrace`** | 0001 | the change that lets the anti-cheat launcher inject its client at all |
 | **B. Signal fidelity** | 0007, 0008, 0009 | guest signal handlers must behave like Linux; **0007** is what fixed the disconnects (0008 and 0009 are correctness fixes in the same area) |
-| **C. Code-invalidation cost** | 0002, 0004 | performance in a process with ~200 threads |
+| **C. Code-invalidation cost** | 0002, 0004 | 0002: without it the anti-cheat client never finishes loading; 0004: performance with ~200 threads |
 | **D. Diagnostics** | 0003, 0005, 0006, 0010 | **not fixes** — tools that made the bugs visible without ptrace |
 
-Only patch 0001 (to inject at all) and patch 0007 (to avoid the disconnects) are needed for the series to run as intended;
-0008 and 0009 are correctness fixes in the same area, group C is performance, group D is instrumentation you can drop.
+Three patches are needed for the series to run as intended: 0001 (to inject at all), 0002 (so the injected client
+finishes loading) and 0007 (to avoid the disconnects). 0008 and 0009 are correctness fixes in the same area, 0004 is
+performance, group D is instrumentation you can drop.
 
 Everything is measured on **one game (VRChat) on one machine (Apple M2, Fedora Asahi Remix)**. Treat the series as a
 starting point to fork, not as a supported port.
@@ -93,9 +94,11 @@ blocked them); only the host set is adjusted.
 
 **Verified by:** the whole test set with the change applied — `tests/ptrace-inject` (28 checks), `tests/signal-mask`
 and `tests/signal-regs` all still `RESULT: PASS`, so it is regression-free. **Status: a correctness fix with no observed
-effect on the game.** It was written while the pre-join stall was suspected to be a lost wake-up; that stall turned out
-to be thread-pool starvation with a configuration fix ([disconnects.md](disconnects.md#the-pre-join-stall-il2cpp-thread-pool-starvation)),
-and the stall happens with 0009 applied. Whether the game ever reaches this `rt_sigsuspend` window is unknown.
+effect on the game.** The pre-join stall is thread-pool starvation with a configuration fix
+([disconnects.md](disconnects.md#the-pre-join-stall-il2cpp-thread-pool-starvation)), not this. A diagnostic build that logged every guest `rt_sigsuspend` into the
+`FEX_SIGNALTRACE` ring recorded **none** in two full sessions (launch, anti-cheat, world, 150 s of play) — the same
+build logged both calls of a test program, so the trace works. VRChat does not reach the code 0009 changes; it stays
+in the series as a correctness fix for other guests.
 
 ---
 
@@ -125,15 +128,18 @@ re-translation.
 emits the per-instruction `SMCChecks=full` CRC check for instructions translated from it, so correctness is preserved
 and the fault storm stops. `FEX_SMCHOTPAGEFAULTS=0` restores stock behaviour.
 
-**Status: unproven.** It is here because the fault storm is real and the change is cheap, but whether it moves the frame
-rate *on this workload* was never established — treat it as optional, and A/B it before relying on it.
+**Status: required.** Interleaved launches on FEX-2610, one session each: with `FEX_SMCHOTPAGEFAULTS=0` (stock
+behaviour) the anti-cheat launcher stopped at `Starting Wine module mapping`, gave up after about three minutes and the
+game never started, in every launch (0 of 4); with the patch active every launch reached a world (4 of 4, 26–34 s).
+The fault storm is not a slowdown but a wall while the client is mapped. Once in a world, frame rates matched the
+other sessions, so the patch's own cost (the per-instruction check on hot pages) does not show.
 
 ---
 
-## D. Diagnostics — patches 0003, 0005, 0006
+## D. Diagnostics — patches 0003, 0005, 0006, 0010
 
 These fix nothing. Easy Anti-Cheat detects `ptrace` and `perf` ("Forbidden system configuration (Debugger detected.)"),
-so the usual tools were off the table; these three gave the investigation sight lines, in-process and without a
+so the usual tools were off the table; these gave the investigation sight lines, in-process and without a
 debugger. Include them if you want to reproduce the analysis; drop them for a minimal "just runs" build.
 
 * **0003 — invalidation stats.** `FEX_PROFILESTATS=1` publishes per-thread JIT/invalidation/SMC counters to
@@ -146,8 +152,7 @@ debugger. Include them if you want to reproduce the analysis; drop them for a mi
 * **0010 — futex word in the snapshot.** Extends 0006's record from 80 to 160 words: for a thread blocked in
   `futex`/`futex_waitv` it also stores the futex word, the value the wait started with, and the address. That is what
   separates *nobody woke it* (the word still equals the expected value) from *the wake-up was lost* (the word changed
-  but the thread still sleeps) — the distinction that separates a missing wake-up from a lost one. `resolve_snap.py` accepts both record
-  sizes. The verified build ran with this diagnostic; 0010 makes it part of the series.
+  but the thread still sleeps). `resolve_snap.py` accepts both record sizes.
 
 ---
 
@@ -160,5 +165,4 @@ patched tree is a no-op). See the Quick start in the [README](../README.md).
 
 This is a proof of concept for one game on one machine. The patches are deliberately kept as patch files rather than
 proposed to the FEX project, and nothing here is submitted to FEX or Proton. If you want to take it further — another
-game, another SoC, folding the diagnostics into FEX's own tooling, or turning 0004/0007 into something upstreamable —
-please fork it.
+game, another SoC, another host — please fork it.

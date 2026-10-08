@@ -11,8 +11,8 @@ problems.
 ![VRChat running on an Apple M2 under Fedora Asahi Remix through the patched FEX-Emu, beside a `fastfetch` of the host](docs/img/vrchat-m2.png)
 
 It is deliberately **one game on one machine** (VRChat on an Apple M2 under Fedora Asahi Remix, inside a [muvm](https://github.com/AsahiLinux/muvm)
-micro-VM). Treat it as a starting point. **Fork it and take it further** — another game, another SoC, or turning the
-signal fixes into something upstreamable. Nothing here is submitted to, or a proposal for, the FEX or Proton projects;
+micro-VM). Treat it as a starting point. **Fork it and take it further** — another game, another SoC, another
+host. Nothing here is submitted to, or a proposal for, the FEX or Proton projects;
 see [Not a contribution](#not-a-contribution).
 
 What made it hard was not CPU speed but **fidelity**. The anti-cheat launcher injects its client into the game with
@@ -30,18 +30,18 @@ Linux.
 | host memory tuning (`scripts/host-tune.sh`, Asahi, 16 GB) | with 16 GB the host runs out of memory around an 8 GB VM plus the GPU buffers; zswap/zram/watermark settings keep the OOM killer away |
 | the launch options and DXVK caps from `scripts/` | `scripts/set-launch-options.sh`, `scripts/dxvk.conf` |
 
-The series is split into **fixes** and **diagnostics** — only patch 0001 (`ptrace`) and patch 0007 (signal mask) are needed to
-run; 0008/0009 are correctness fixes in the same area, the rest is performance or tooling. [docs/patches.md](docs/patches.md) explains each patch and its reasoning:
+The series is split into **fixes** and **diagnostics** — patches 0001 (`ptrace`), 0002 (SMC hot pages) and 0007 (signal mask) are
+needed to run; 0008/0009 are correctness fixes in the same area, the rest is performance or tooling. [docs/patches.md](docs/patches.md) explains each patch and its reasoning:
 
 | patch | group | purpose |
 |---|---|---|
-| 0001 `ptrace` emulation | fix | the EAC launcher injects its client with `ptrace`; FEX emulates the x86-64 view of a tracee. Without it the launcher fails (`Unexpected error (#1)`) |
+| 0001 `ptrace` emulation | fix | the EAC launcher injects its client with `ptrace`; FEX emulates the x86-64 view of a tracee. Without it the launcher fails (`Unexpected error. (#1)`) |
 | 0007 signal mask | fix | guest handlers run with the Linux signal mask. Without it, Photon time-outs in ~every second session |
 | 0008 syscall info | fix | a handler entered from a syscall keeps the registers it sets |
-| 0009 sigsuspend mask | correctness fix | `rt_sigsuspend` no longer host-blocks FEX's own signals; regression-free, no observed effect on the game |
+| 0009 sigsuspend mask | correctness fix | `rt_sigsuspend` no longer host-blocks FEX's own signals; regression-free; VRChat never calls it (traced) |
 | 0004 cheap invalidation | performance | `mmap`/`mprotect` on data pages ~22x cheaper with ~200 threads; without it, 60+ s joins |
-| 0002 SMC hot pages | performance (unproven) | pages that keep self-modifying-code faulting stop being write-protected |
-| 0003/0005/0006/0010 | **diagnostics** | stats, sampler and thread snapshot (the last also records the futex word) — tools, not fixes |
+| 0002 SMC hot pages | fix | pages that keep self-modifying-code faulting stop being write-protected. Without it the anti-cheat client never finishes loading and the game does not start |
+| 0003/0005/0006/0010 | **diagnostics** | stats, sampler and thread snapshot (0010 adds the futex word to the snapshot) — tools, not fixes |
 
 ## What is changed where
 
@@ -86,13 +86,13 @@ tests/signal-mask/build.sh clang                      # run the binary in the VM
 tests/signal-regs/build.sh clang                      # run the binary in the VM too; passes with patch 0008
 sudo scripts/host-tune.sh                             # memory tuning (optional, strongly recommended on 16 GB)
 scripts/set-launch-options.sh                         # with Steam closed
-REALISM=1 VM_MEM_MB=10240 VM_VRAM_MB=3072 scripts/vm/steam-vm.sh   # start Steam in the VM (verified config), then launch VRChat
+REALISM=1 VM_MEM_MB=10240 VM_VRAM_MB=3072 scripts/vm/steam-vm.sh   # start Steam in the VM (verified config; REALISM=1 is optional), then launch VRChat
 ```
 
 Full A-to-Z guide, the exact verified versions and what breaks a working setup: [docs/setup-asahi.md](docs/setup-asahi.md). Tools: [docs/tools.md](docs/tools.md). What works and what is
 open: [docs/status.md](docs/status.md).
 
-## What this is not
+## Scope and limits
 
 * **Not an anti-cheat bypass.** Nothing fakes, replays or short-circuits EAC's result; no Epic or VRChat binaries,
   keys or traces are included. The patches only make FEX behave like a real Linux kernel for `ptrace`, signals and
@@ -103,8 +103,8 @@ open: [docs/status.md](docs/status.md).
   published guide, "Using VRChat in a Virtual Machine", which says EAC's VM block is its CPUID hypervisor-vendor check
   and that **"You can get virtualization working alongside EAC in some cases, and we don't mind if you do this."** Read
   that as a policy statement, not a licence: it is tolerated-but-unsupported, and this repository marks the script
-  **optional and unverified as necessary**. It is not required to reproduce the emulation work, and it does not modify
-  the game or the anti-cheat.
+  **optional**: VRChat runs without it. It may be useful for other games whose anti-cheat inspects the machine's
+  hardware identity. It does not modify the game or the anti-cheat.
 * **Not supported by VRChat.** VRChat does not support virtual machines or emulation; Epic/VRChat may change anything
   at any time and enforcement is their call. Use at your own risk, and never run modified clients. Never attach a
   debugger or `perf` to the running game: EAC reports it.

@@ -13,7 +13,7 @@ About every second session that reaches a world ended with `OnDisconnected: Clie
 out"), always **25–29 s after `Finished entering world`** (41–50 s after `AntiCheat Session Begin`). Separately, some launches froze at
 start-up (after `Successfully connected to Stomp` or `OnRegionListReceived`, before `Destination set`) with the main thread asleep and no CPU use — the pre-join stall, a separate cause covered below.
 
-Measured over the first ~40 sessions on an M2 Air (stock FEX behaviour): 15 timed out, 14 were fine for the whole observation
+Measured over the first 35 sessions on an M2 Air (stock FEX behaviour): 15 timed out, 14 were fine for the whole observation
 window (≥ 75 s of log), 6 hung at start-up. Sessions shorter than ~75 s of log cannot show the timeout and must not be counted as
 healthy (`tools/harness/classify_runs.py` marks them `short`).
 
@@ -157,11 +157,11 @@ rendering, DXVK and the job system are all parked. Meanwhile **49 new `IL2CPP Th
 
 **3. Every stall shows the pool exploding.** `tools/harness/poolmon.sh` counts the pool's threads once a second. A stalled
 start-up: 6 workers at launch, steady growth of ~2 per second from t ≈ 13 s to t ≈ 61 s (110 workers), then growth stops
-at the moment the timeout releases the waits. A healthy start-up stays at 4–11 workers. Every older stall snapshot on disk
-shows 46–137 pool threads, growing between its two snapshots; in-world snapshots show 13.
+at the moment the timeout releases the waits. A healthy start-up stays at 4–11 workers. Earlier stall snapshots
+show 46–137 pool threads, growing between its two snapshots; in-world snapshots show 13.
 
 **4. The socket side.** At every captured stall the Photon NameServer socket (`ns.photonengine.io`,
-`216.120.180.19:443`) holds ~49 unread bytes, and wineserver has it registered for `EPOLLPRI` only
+port 443) holds ~49 unread bytes, and wineserver has it registered for `EPOLLPRI` only
 (`/proc/<wineserver>/fdinfo` shows `events: 1a`). `tools/harness/wsmem.py` reads wineserver's own `struct sock` state
 passively; read during a stall's retry loop (by then the NameServer socket itself is closed), the game's other `0x1a`
 sockets have no event-select mask, no queued receive and no poll request of their own — so their `EPOLLPRI` can only come

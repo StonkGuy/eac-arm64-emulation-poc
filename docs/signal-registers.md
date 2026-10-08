@@ -37,7 +37,7 @@ in front of the store.
 ## What decides it
 
 * `FEX_SMCCHECKS=none` or `full` hides it, and so does `FEX_MAXINST=1` (single-instruction blocks). The default `mtrack`
-  mode shows it. `FEX_MULTIBLOCK`, `FEX_TSOENABLED`, `FEX_ENABLEAVX` and `FEX_X87REDUCEDPRECISION` make no difference.
+  mode shows it.
 * `kill`, `tkill` and `tgkill` to self arrive while FEX is inside the C++ half of the guest `syscall` (the signal is delivered as the
   host system call returns), `setitimer` signals arrive in translated code. Only the former fail.
 * The first run of a handler (it has to be translated first) and later runs behave the same.
@@ -71,6 +71,4 @@ Wine delivers `SIGUSR1` to threads that are parked in system calls (`futex_waitv
 start on exactly this path, and with the unfixed signal mask `SIGUSR1` can also nest inside its own handler, which is the second
 trigger above. It is nevertheless not the cause of the Photon time-outs: with patch 0008 and without `FEX_SIGNALMASKFIX` the
 Wine reproducer of [disconnects.md](disconnects.md) still wedged in every control run (6 of 6), and with the signal-mask fix it did
-not in any of 6, with or without 0008. The bug was found while testing 0007 (a test that should have passed with the signal-mask fix did
-not) and is fixed because it is a plain correctness bug. Whether it changes the rate of the separate start-up hang is not known
-yet.
+not in any of 6, with or without 0008. It is fixed because it is a plain correctness bug.

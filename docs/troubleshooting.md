@@ -11,9 +11,8 @@ running VRChat on another machine. Cancel; Steam does not start a second copy.
 **Holding W stops the mouse.** libinput *disable-while-typing* on the laptop trackpad — see [tuning.md](tuning.md) §2.
 
 **Unity crash dialog / frozen window, `Crashes/Crash_*/crash.dmp` appears.** `tools/mdparse.py crash.dmp` prints the
-exception, faulting address and registers. An access violation at `0x14` inside a `/memfd:` mapping is the EAC
-in-game client dereferencing its own null singleton (seen once in five launches; likely an init/teardown race inside the
-client). After such a crash `UnityCrashHandler64.exe` keeps the process alive, which looks like a freeze: kill the game.
+exception, faulting address and registers. After a crash `UnityCrashHandler64.exe` keeps the process alive, which looks
+like a freeze: kill the game.
 
 **Disconnect ("Your connection to VRChat timed out") ~25–29 s after "Finished entering world".** Before the signal-mask fix
 (patch 0007, on by default) roughly every second session that reached a world ended this way, at a very regular
@@ -24,8 +23,7 @@ bytes) and stays full while the render loop keeps running; in wineserver, the ep
 completion is never delivered to the client thread. The cause is FEX running guest signal handlers with the wrong signal
 mask, which loses that wake-up when Wine suspends and resumes threads. Check that you run the patched FEX with the default
 `FEX_SIGNALMASKFIX` (not `=0`); `tests/signal-mask` tells you in a second. Evidence, the reproducer and how to capture a wedge:
-[disconnects.md](disconnects.md). (An earlier reading that the reader thread was parked on a wineserver reply pipe does not
-hold up: that wait is the idle-state footprint of every session.)
+[disconnects.md](disconnects.md).
 
 **The game freezes at start-up, before "Destination set"** (main thread asleep, no CPU use, the log silent for ~60 s).
 That is the pre-join stall described below.
@@ -37,7 +35,7 @@ That is the pre-join stall described below.
 This is the **pre-join stall**: the game's IL2CPP thread pool starts with one worker per reported CPU, the VM has only 4,
 and the start-up burst starves it until a ~60 s timeout. Check that the launch options contain `WINE_CPU_TOPOLOGY=16:…`
 (`scripts/set-launch-options.sh` adds it); with it, no stall was seen. Without it, closing and relaunching the game
-usually gets through. Do not set `PROTON_NO_FSYNC` (it makes the stall more frequent) and do not swap FEX builds for it.
+usually gets through.
 Details: [disconnects.md](disconnects.md#the-pre-join-stall-il2cpp-thread-pool-starvation).
 
 **EAC launcher fails (`Unexpected error. (#1)` etc.).** Run `tests/ptrace-inject` first. If it fails, FEX is not the
@@ -45,11 +43,9 @@ patched build (note that binfmt handlers pin the interpreter inode: restart the 
 Never leave `WINEDEBUG` trace channels or extra FEX debug settings on while testing EAC: they change timing and have
 crashed the game.
 
-**EAC says 301, but the game dies ~3 s later and no new `output_log_*.txt` appears.** The Proton log (if enabled) shows
-`err:virtual:virtual_setup_exception nested exception on signal stack` while `VRChat.exe` loads `kernel32.dll`. Seen with
-the launch options `WINEDEBUG=err+all,+loaddll,+module,+seh PROTON_LOG=1 FEXHOTMEMFD=1`, on three different FEX builds;
-restoring the plain launch options (`scripts/set-launch-options.sh`, `WINEDEBUG=-all`) fixed it at once. Check the
-launch options first; do not swap FEX builds for this symptom.
+**EAC says 301, but the game dies ~3 s later and no new `output_log_*.txt` appears.** The launch options carry trace
+settings (`WINEDEBUG` channels, `PROTON_LOG`, FEX debug options); the Proton log then shows `nested exception on signal
+stack`. Restore the plain launch options with `scripts/set-launch-options.sh`.
 
 **Never attach a debugger, `perf` or an strace-like tool to the running game.** EAC reports it as
 "Debugger detected" and keeps reporting; use [how-it-works.md](how-it-works.md) (in-process sampler) instead.

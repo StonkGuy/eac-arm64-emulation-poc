@@ -7,7 +7,7 @@
 #
 # What it changes and why (all runtime sysctls, nothing is written to disk except the saved originals):
 #
-#  vm.watermark_boost_factor=0   The OOM report of the crash showed the min watermark inflated from 352 MB to 1.1 GB by
+#  vm.watermark_boost_factor=0   An OOM report showed the min watermark inflated from 352 MB to 1.1 GB by
 #                                "watermark boosting" (it triggers reclaim long before memory is really short and wastes
 #                                ~800 MB of a 16 GB machine). 0 disables boosting.
 #  vm.page-cluster=0             Swap in one page at a time. With zswap/zram in front of swap, readahead only wastes memory.

@@ -5,7 +5,7 @@ translate DirectX, translate x86-64, emulate the Windows API — is correct, and
 three. The blocker is a mismatch between *where the fast x86 translator lives* and *where the hardware 3D lives*, plus
 the anti-cheat environment the Linux path depends on. Both conditions could change; neither has yet.
 
-This page records the analysis so it is not re-litigated. It is a feasibility note, not a plan.
+It is a feasibility note, not a plan.
 
 ## How to read this page
 
@@ -66,7 +66,7 @@ The **Linux/Proton** mode is different: there is no kernel driver, and Epic enab
 client* that the Windows EAC binary talks to under Wine/Proton. That is the mode this repository targets: the Proton
 EasyAntiCheat Runtime Valve ships (Steam appid 1826330) is **x86-64 only**, and VRChat ships no Arm64-aware EAC
 bootstrapper, so on an arm64 host the EAC client that runs is x86-64 code under the translator (FEX here).
-Windows-in-a-VM does not run it. (An **unverified** aside for completeness — read from SDK release notes, not checked here —: Epic has added Linux **Arm64** support to the *EOS SDK*
+Windows-in-a-VM does not run it. (An **unverified** aside for completeness — read from SDK release notes, not checked here: Epic has added Linux **Arm64** support to the *EOS SDK*
 — noted in SDK 1.16.4 and 1.17.1.3 — but the EOS anti-cheat docs still list the Anti-Cheat Client Interface as
 unsupported on Linux ARM64, and it is a per-title opt-in that no VRChat user has reported being in use.)
 
@@ -229,7 +229,7 @@ The stack is real; the anti-cheat question is not answered by it, and its author
   MoltenVK still does not implement geometry shaders (open since 2022), so the fork is a requirement, not a convenience.
 * It does **not pin a FEX or EAC version** — FEX is Valve's, shipped inside Proton 11 ARM64, and whether the ARM64
   SteamOS image even carries Valve's EAC runtime is unaddressed.
-* It is **days old**, demonstrates only three or four games in short offline sessions, and has no compatibility list.
+* It is **new** (created 2026-10-04), demonstrates only three or four games in short offline sessions, and has no compatibility list.
   The guest image is Valve's ARM64 SteamOS (the Steam Frame build), downloadable from Valve; its EULA forbids
   modifying or redistributing it.
 

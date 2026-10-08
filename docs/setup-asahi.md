@@ -46,7 +46,7 @@ In Steam:
 ## 3. Build the patched FEX
 
 ```sh
-scripts/build-fex.sh            # clones FEX at FEX-2610 (14c9268), applies patches/0001-0010, builds Release
+scripts/build-fex.sh            # clones FEX at FEX-2610 (14c9268), applies patches/0001-0010 (0001, 0002, 0007 are required), builds Release
 scripts/vm/install-overlay.sh   # copies the binary to ~/.local/share/vrchat-fex-eac/fex/FEX
 ```
 
@@ -113,7 +113,7 @@ Set `VRC_REPORT_CPUS=0` to leave it out. **Keep `WINEDEBUG=-all` and add no debu
 ## 7. Start Steam inside the VM
 
 ```sh
-REALISM=1 VM_MEM_MB=10240 VM_VRAM_MB=3072 scripts/vm/steam-vm.sh     # the verified configuration (section 10)
+REALISM=1 VM_MEM_MB=10240 VM_VRAM_MB=3072 scripts/vm/steam-vm.sh     # the verified configuration (section 10); REALISM=1 is optional
 ```
 
 Defaults: 8 GB guest RAM (`VM_MEM_MB`), 4 GB "VRAM" (`VM_VRAM_MB`), guest NIC MTU 1500 (`VM_MTU`), the VM in its own
@@ -158,8 +158,7 @@ grep -cE "AntiCheat Session Begin: Success|Finished entering world" "$L"     # e
 ## 10. Verified working configuration
 
 Last verified 2026-10-08 on FEX-2610: four launches in a row, each with EAC 301, `AntiCheat Session Begin: Success`, the
-Photon region found in 3 s and the world joined, then a 150 s in-world capture. (The same setup on FEX-2609.1 ran dozens
-of sessions on 2026-10-07.)
+Photon region found in 3 s and the world joined, then a 150 s in-world capture.
 
 | component | version / value |
 |---|---|
@@ -172,17 +171,16 @@ of sessions on 2026-10-07.)
 | VRChat | Steam build id `25738324` |
 | launch options | exactly the section 6 string: `WINEDEBUG=-all PROTON_USE_XALIA=0 DXVK_CONFIG_FILE=… WINE_CPU_TOPOLOGY=16:…` |
 | VM size | 8 GB RAM, 4 GB VRAM, MTU 1500 (10 GB / 3 GB also verified) |
-| environment realism | on (fake PID 1, DMI, PCI list, hostname — `REALISM=1`, see below); not tested without it since the ptrace emulation landed |
-| Proton `user_settings.py` | no settings needed (the verified run set only the in-process profiler at 1 Hz, which is harmless) |
+| environment realism | optional; on in the verified run (fake PID 1, DMI, PCI list, hostname — `REALISM=1`, see below) |
+| Proton `user_settings.py` | none needed |
 
 ## 11. What breaks it
 
 * **Wine trace channels, `PROTON_LOG=1` or extra FEX debug settings in the launch options.** With
   `WINEDEBUG=err+all,+loaddll,+module,+seh PROTON_LOG=1 FEXHOTMEMFD=1` the EAC launcher still reports 301, but
   `VRChat.exe` dies ~3 s later inside `LdrInitializeThunk` while loading `kernel32.dll`, before Unity writes any log;
-  the Proton log shows `err:virtual:virtual_setup_exception nested exception on signal stack`. Reproduced with three
-  different FEX builds; going back to the section 6 string fixed it at once. Which of the three settings is responsible
-  is not isolated — use none of them for play.
+  the Proton log shows `err:virtual:virtual_setup_exception nested exception on signal stack`. Use the section 6 string
+  for play.
 * **A FEX build without patch 0001** (or the stock FEX): the EAC launcher ends with `Launcher finished with: 210, 'Unexpected error. (#1)'`.
 * **Installing a new FEX without restarting the VM:** the old binary stays registered (binfmt pins the inode).
 * **Attaching a debugger, `perf`, `strace` or any ptrace tool to the game:** EAC reports it ("Debugger detected").
@@ -194,4 +192,5 @@ of sessions on 2026-10-07.)
 ## Optional: environment realism
 
 `REALISM=1 scripts/vm/steam-vm.sh` additionally applies `scripts/vm/realism.sh` (fake DMI/PCI/PID 1/hostname inside
-the VM). It follows VRChat's VM guide. The verified configuration above had it on.
+the VM). Optional for VRChat (it follows VRChat's VM guide; the verified run had it on). It may also be useful for other
+games whose anti-cheat inspects the machine's hardware identity.

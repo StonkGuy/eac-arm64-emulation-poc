@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tiny XTEST input injector (python ctypes; no xdotool on this box).
+"""Tiny XTEST input injector (python ctypes; no xdotool dependency).
 usage: xin.py pos | list | focus | activate SUBSTR | move DX DY | warp X Y | click [1|2|3] | down N | up N | key KEYNAME [KEYNAME...] | hold KEYNAME SECONDS | drag DX DY SECONDS | grab WINDOW_SUBSTR X Y W H OUT.ppm"""
 import ctypes, sys, time
 X = ctypes.CDLL("libX11.so.6"); T = ctypes.CDLL("libXtst.so.6")
