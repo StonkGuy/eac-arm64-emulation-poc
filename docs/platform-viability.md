@@ -30,7 +30,8 @@ you can check them rather than take our word:
 | Apple gives a **Linux** guest only virtio-gpu **2D**, no 3D | cited | Apple WWDC22; UTM maintainer |
 | EAC's Linux/Proton client is an x86-64 ELF; there is **no aarch64 build** | cited | Steam appid 1826330 (no ARM depot) |
 | Epic lists the Anti-Cheat *Client Interface* as unsupported on **Linux ARM64** | cited | Epic EOS Anti-Cheat docs (link below) |
-| upstream FEX cannot run EAC (its `ptrace` fidelity is the gap) | cited | FEX issue #4348 (open) |
+| upstream FEX cannot run EAC out of the box | cited | FEX issue #4348 (open) |
+| the gap is `ptrace` fidelity — the EAC launcher injects its client with `ptrace` | inferred | no upstream source states this; it is this repository's finding (`patches/0001`, [how-it-works.md](how-it-works.md)) |
 | a macOS-libkrun guest **can** run the patched FEX (4 KB pages by construction) | inferred | the `libkrunfw` config above |
 | "~35–50 FPS" for VRChat through this stack | inferred (extrapolated) | §*Performance expectation* below |
 | whether EAC's Linux client **accepts a macOS-libkrun guest** | **unverified — the open question** | the experiment in [macos-port.md](macos-port.md) |
@@ -58,14 +59,14 @@ So "port it to macOS" is not a category error: it is this project with the trans
 EAC has two modes. The **Windows** mode loads a signed kernel driver (ring 0) and uses kernel callbacks. Running that
 inside an ARM Windows 11 VM means stacking three things EAC is built to reject: a hypervisor guest, the x86-64 game
 going through Windows' own Prism translation *inside* ARM Windows *inside* a VM (double translation), and a kernel
-driver now running against a virtualized kernel. VRChat's client also refuses a virtual machine when EAC's default
-hypervisor check fires (`VRChat cannot run in Virtual Machine`). Windows-in-a-VM on a Mac is therefore not a path.
+driver now running against a virtualized kernel. In a Windows guest, EAC also refuses the default Hyper-V hypervisor
+vendor string (VRChat's own VM guide; `VRChat cannot run in Virtual Machine`). Windows-in-a-VM on a Mac is therefore not a path.
 
 The **Linux/Proton** mode is different: there is no kernel driver, and Epic enabled a *native Linux userspace EAC
 client* that the Windows EAC binary talks to under Wine/Proton. That is the mode this repository targets: the Proton
 EasyAntiCheat Runtime Valve ships (Steam appid 1826330) is **x86-64 only**, and VRChat ships no Arm64-aware EAC
 bootstrapper, so on an arm64 host the EAC client that runs is x86-64 code under the translator (FEX here).
-Windows-in-a-VM does not run it. (A caveat for completeness: Epic has added Linux **Arm64** support to the *EOS SDK*
+Windows-in-a-VM does not run it. (An **unverified** aside for completeness — read from SDK release notes, not checked here —: Epic has added Linux **Arm64** support to the *EOS SDK*
 — noted in SDK 1.16.4 and 1.17.1.3 — but the EOS anti-cheat docs still list the Anti-Cheat Client Interface as
 unsupported on Linux ARM64, and it is a per-title opt-in that no VRChat user has reported being in use.)
 
@@ -144,12 +145,16 @@ estimate, not a prediction:
   when TSO emulation is left fully on in a lock-heavy scene: <https://github.com/FEX-Emu/FEX/discussions/5349>).
 * **The reason Rosetta wins is hardware TSO.** Apple silicon implements x86's total-store-ordering in hardware, so
   Rosetta does not pay FEX's software-TSO tax (hardware-TSO cost on M1 ≈ 8.9%: Wrenger, JSA 2024). On a system *without*
-  Rosetta (libkrun, this route), FEX pays it in software. This is the single largest emulation cost and it is
-  unavoidable on the macOS-libkrun route.
+  Rosetta, FEX gets hardware TSO only if the guest kernel can switch the CPU into TSO mode (`prctl(PR_SET_MEM_MODEL)`,
+  Asahi's kernel series). On Asahi this works on the host and inside the muvm guest (measured with
+  `tests/bench/tso_probe.c`, so FEX pays nothing for it there). On macOS, libkrunfw's guest kernel carries the same
+  series, but libkrun itself never sets the TSO bit, so it works only if Hypervisor.framework lets the guest set it — not
+  verified by anyone. If it does not, FEX falls back to software TSO, the single largest emulation cost.
 * **GPU layer:** no quantified MoltenVK-vs-native-Metal or D3DMetal-vs-DXVK FPS figures exist publicly; treat graphics
   overhead as unmeasured.
 * **Thermals:** a fanless MacBook Air M2 sustains ~10–25% below peak under 20–30-minute loads, so a session settles
-  below its initial rate regardless of the stack.
+  below its initial rate regardless of the stack. (This page's own testing was on the battery-powered Apple M2 host in
+  [setup-asahi.md](setup-asahi.md); the range is an estimate, not a benchmark.)
 
 A native-x86 scene that runs 60 FPS on a comparable desktop extrapolates to roughly **35–50 FPS typical** through
 FEX+Proton on M-series (band ~25–55; floor ~15–25 in a TSO-heavy, throttled case). All of this is extrapolated from
@@ -189,7 +194,7 @@ game (DX9/10/11) → DXVK (Proton 11, x86 via FEX) → Vulkan
 ```
 
 with `Virtio-GPU Venus (Apple M4 Max)`, Vulkan 1.4, the DXVK feature set present in the guest, and DX11 titles
-running (*Death's Door*, *Heroes of Might and Magic: Olden Era*, *Diplomacy is Not an Option*). Its guest kernel is
+running (*Death's Door*, *Heroes of Might and Magic: Olden Era*). Its guest kernel is
 **4 KB-page** and enables **Apple TSO for FEX via `PR_SET_MEM_MODEL`** — so it is this project's architecture on macOS,
 same VMM family, same FEX, same Proton/DXVK, with only the host graphics translation swapped (MoltenVK instead of native
 Vulkan). The GPU "blocker" in the UTM section above does not apply here: this route does not use UTM's backends at all,
@@ -225,8 +230,8 @@ The stack is real; the anti-cheat question is not answered by it, and its author
 * It does **not pin a FEX or EAC version** — FEX is Valve's, shipped inside Proton 11 ARM64, and whether the ARM64
   SteamOS image even carries Valve's EAC runtime is unaddressed.
 * It is **days old**, demonstrates only three or four games in short offline sessions, and has no compatibility list.
-  The game image is Valve's **unreleased-hardware beta** (the Steam Frame build), which its EULA does not permit
-  redistributing and whose long-term availability is uncertain.
+  The guest image is Valve's ARM64 SteamOS (the Steam Frame build), downloadable from Valve; its EULA forbids
+  modifying or redistributing it.
 
 Three sub-questions remain unanswered by every source found, and they are the ones that decide a port: (a) does EAC's
 Linux/Proton runtime — there is **no aarch64 build** of it (Steam appid 1826330, the Proton EasyAntiCheat Runtime, is
@@ -249,8 +254,8 @@ one VM or translator:
   kernel view. Put them in different environments and EAC has nothing to attach to.
 * **A container adds nothing.** To inspect the game it needs a shared PID namespace and `ptrace` rights — the opposite
   of isolation — and EAC fingerprints cgroups, namespaces and `/proc` anyway.
-* **A "small VM" is still a VM.** The EAC client refuses a VM whose hypervisor signature it does not recognise, and the
-  game would have to be inside the same VM for the injection to work, so this is back to emulating everything.
+* **A "small VM" is still a VM.** The game would have to be inside the same VM for the injection to work, and EAC's
+  client interface is documented as unsupported in VMs, so this is back to emulating everything.
 
 The instinct behind the idea — keep the anti-cheat lean, do not emulate a whole Windows kernel — is already the design
 here. The Linux/Proton stack is Wine (a userspace API layer), not a Windows kernel in a VM, and EAC's Linux mode is
@@ -268,8 +273,9 @@ continued at `VRC-Emulator/vrc-eac-emulator`). It is **not** the same approach a
   a Linux VM.
 * Its setup guide's load-bearing step is a `.vmx` full of **hypervisor-hiding and hardware-spoofing** (SMBIOS/vendor/
   serial masking, avoiding the `00:50` MAC prefix), explicitly to "avoid VM detection from EAC".
-* It is distributed via Discord, ships no usage guide ("you'll have to figure it out yourself"), and its original is
-  archived.
+* Its original repository is archived; the continuation lives under a separate organisation and has no releases on
+  GitHub. (Its repository does carry a step-by-step `SETUP_GUIDE.md`; how it is distributed beyond that was not
+  checked.)
 
 That is a bypass posture: **replace** the anti-cheat's calls with hooks, and **spoof** the hardware identity to hide the
 VM. This repository is the opposite in kind. It runs EAC's **sanctioned Linux/Proton mode** — which Epic enabled
@@ -314,7 +320,7 @@ take it.
 Pointers, not endorsements — we read these, we did not reproduce most of them:
 
 * muvm (libkrun front-end, 4 KB micro-VM) — <https://github.com/AsahiLinux/muvm>
-* libkrun (KVM on Linux, Hypervisor.framework on macOS; virtio-gpu/Venus/native-context) — <https://github.com/containers/libkrun>
+* libkrun (KVM on Linux, Hypervisor.framework on macOS; virtio-gpu/Venus/native-context) — <https://github.com/libkrun/libkrun>
 * `libkrunfw` aarch64 kernel config, `CONFIG_ARM64_4K_PAGES=y` — <https://github.com/libkrun/libkrunfw/blob/main/config-libkrunfw_aarch64>
 * `steamac` (Valve ARM64 SteamOS in a libkrun VM on Apple silicon) — <https://github.com/fxgl/steamac>
 * Apple `Virtualization.framework` running Linux (virtio-gpu **2D**; no 3D for Linux guests) — <https://developer.apple.com/documentation/virtualization>

@@ -1,7 +1,7 @@
-From d6ee2f133065e186ecaa43446e1561e61e4173b5 Mon Sep 17 00:00:00 2001
+From cb5019409ab901f5f1ec9d93f2000bd7a9a088d8 Mon Sep 17 00:00:00 2001
 From: build <build@invalid>
 Date: Wed, 7 Oct 2026 17:04:36 +0300
-Subject: [PATCH] SamplingProfiler: record the futex word in all-thread
+Subject: [PATCH 10/10] SamplingProfiler: record the futex word in all-thread
  snapshots
 
 The snapshot record grows to 160 words: the Spare slot becomes the
@@ -15,7 +15,7 @@ accepts both the 640-byte (80-word) and 1280-byte (160-word) records.
  1 file changed, 30 insertions(+), 4 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.cpp
-index 5bd0f83..e7542ee 100644
+index 5bd0f830f..e7542eecc 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.cpp
 @@ -39,11 +39,13 @@ namespace {

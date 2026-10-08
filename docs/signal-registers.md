@@ -17,14 +17,20 @@ four ways, each twice:
 | `tgkill(self)`, `kill(self)`, `tkill(self)` | **no**, both registers hold the interrupted code's values |
 | `setitimer`, asynchronous, arrives in translated code | yes |
 
+All three go through the same path: the signal is delivered while the thread is still in the C++ half of its own `syscall`.
+Measured with `tests/signal-regs` on unpatched FEX-2609.1 (and on Fedora's FEX 2604 package): all six `tgkill`/`kill`/`tkill`
+runs fail, as do the four `tgkill`/`kill` runs whose handler takes a `SIGSEGV`; with patch 0008 every case passes.
+
 A second set of cases uses a handler that takes a `SIGSEGV` of its own (a load from address 0, stepped over by a `SIGSEGV`
 handler) before its first system call. That is the other consumer of the stale marker (a nested signal, no self-modifying code
 involved) and fails the same way on stock FEX when the outer signal was raised by `tgkill`/`kill` to self.
 
 On Linux every case passes (the same source builds for aarch64 as a reference run: `tests/signal-regs/build.sh native`).
 
-The same thing breaks a compiled handler: with `-O1` clang keeps the handler's `sig` argument in `r8d` across two system
-calls and `signal_mask_test` then sends `tgkill(pid, tid, <pid>)` instead of `tgkill(pid, tid, SIGUSR1)`, which is why its checks
+The same thing breaks a compiled handler: with `-O1` clang keeps the handler's `sig` argument in `r8d`
+across the whole body — the stores to its globals and six system calls before the last read of `r8d`
+(`movl %edi, %r8d` … `movslq %r8d, %rdx`) — and `signal_mask_test` then sends `tgkill(pid, tid, <pid>)` instead of
+`tgkill(pid, tid, SIGUSR1)`, which is why its checks
 4a, 4b and 6 failed on FEX with the signal-mask fix enabled and passed again as soon as the handler had one more instruction
 in front of the store.
 
@@ -65,6 +71,6 @@ Wine delivers `SIGUSR1` to threads that are parked in system calls (`futex_waitv
 start on exactly this path, and with the unfixed signal mask `SIGUSR1` can also nest inside its own handler, which is the second
 trigger above. It is nevertheless not the cause of the Photon time-outs: with patch 0008 and without `FEX_SIGNALMASKFIX` the
 Wine reproducer of [disconnects.md](disconnects.md) still wedged in every control run (6 of 6), and with the signal-mask fix it did
-not in any of 6, with or without 0008. The bug was found on the way (a test that should have passed with the signal-mask fix did
+not in any of 6, with or without 0008. The bug was found while testing 0007 (a test that should have passed with the signal-mask fix did
 not) and is fixed because it is a plain correctness bug. Whether it changes the rate of the separate start-up hang is not known
 yet.

@@ -36,7 +36,7 @@ status() {
 case "${1:-apply}" in
   status) status ;;
   apply)
-    if [ ! -e "$SAVE" ]; then { for k in $KEYS; do echo "$k=$(sysctl -n $k)"; done; echo "read_ahead_kb=$(cat $NVME)"; } > "$SAVE"; fi
+    if [ ! -e "$SAVE" ]; then { for k in $KEYS; do echo "$k=$(sysctl -n $k)"; done; echo "read_ahead_kb=$(cat $NVME)"; echo "home_atime=$(grep ' /home ' /proc/mounts | awk '{print $4}' | tr ',' '\n' | grep -E '^(no)?atime$' | head -1)"; } > "$SAVE"; fi
     sysctl -w vm.watermark_boost_factor=0 vm.page-cluster=0 vm.swappiness=60 >/dev/null
     echo 256 > $NVME
     mount -o remount,noatime /home
@@ -53,8 +53,15 @@ case "${1:-apply}" in
     fi
     status ;;
   revert)
-    if [ -e "$SAVE" ]; then while IFS== read -r k v; do if [ "$k" = read_ahead_kb ]; then echo "$v" > $NVME; else sysctl -w "$k=$v" >/dev/null; fi; done < "$SAVE"; fi
-    mount -o remount,relatime /home
+    if [ -e "$SAVE" ]; then
+      while IFS== read -r k v; do
+        case "$k" in
+          read_ahead_kb) echo "$v" > $NVME ;;
+          home_atime) [ -n "$v" ] && mount -o remount,"$v" /home ;;
+          *) sysctl -w "$k=$v" >/dev/null ;;
+        esac
+      done < "$SAVE"
+    fi
     if swapon --show=NAME --noheadings | grep -q '^/dev/zram0'; then swapoff /dev/zram0 && echo 1 > /sys/block/zram0/reset; fi
     status ;;
   *) echo "usage: $0 [apply|revert|status]"; exit 2 ;;

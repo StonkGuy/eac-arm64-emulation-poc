@@ -45,7 +45,7 @@ weak = statistics.median(ac) < 25 and statistics.median(bat) < -2
 throttled = hi > 1.5 * lo and hi - lo > 6
 if weak or throttled:
     print('\nVERDICT: the power source is too weak. AC input tops out at %.1f W while the machine wants %.0f W; the difference comes from the battery' % (max(ac), hi))
-    print('and, when that runs out of its short allowance, the SoC is throttled hard (CPU ~5x slower for ~10-15 s at a time). That shows up as a frame rate')
+    print('and, when that runs out of its short allowance, the SoC is throttled hard (CPU ~4-5x slower for ~8-18 s at a time). That shows up as a frame rate')
     print('that swings between ~45 and ~20 FPS and as network time-outs. Use the 30 W+ USB-C PD charger (or MagSafe) in the Mac\'s own port, no hub or PC port.')
 else:
     print('\nVERDICT: no sign of power limiting under full CPU load.')

@@ -1,29 +1,21 @@
 # The "connection timed out" disconnects
 
-Status: **the time-outs are explained and, in the sessions run so far, gone with the signal-mask fix** (`FEX_SIGNALMASKFIX`, patch 0007,
-on by default; patch 0008 removes a second bug of the same family). A rarer **pre-join stall** (a silent
-~60 s gap, then the region connect fails and the client retries) is a different problem and is **not fixed** — see
-[The pre-join stall](#the-pre-join-stall-is-something-else). Written so the investigation can be repeated on another machine.
+Status: **the time-outs are explained and gone with the signal-mask fix** (`FEX_SIGNALMASKFIX`, patch 0007,
+on by default; patch 0008 removes a second bug of the same family). This is a one-game, one-machine proof of concept: "gone" means 0 time-outs in the 16-session A/B and in
+the 59 sessions run since ([Real-game A/B](#real-game-ab)), not "proved universal". A rarer **pre-join stall** (a ~60 s freeze at the Photon region lookup, then a `Disconnecting` rejoin
+loop) is a different problem with a different fix: IL2CPP thread-pool starvation on a 4-vCPU guest, fixed by reporting
+more CPUs to the game — see [The pre-join stall](#the-pre-join-stall-il2cpp-thread-pool-starvation). Written so the
+investigation can be repeated on another machine.
 
 ## Symptom
 
 About every second session that reaches a world ended with `OnDisconnected: ClientTimeout` ("Your connection to VRChat timed
-out"), always **25–29 s after `Finished entering world`** (41–50 s after `AntiCheat Session Begin`). Separately, about one launch
-in seven hangs ~8 s into the game log (after `Successfully connected to Stomp` or `OnRegionListReceived`, never reaching
-`Destination set`) with the main thread asleep and no CPU use.
+out"), always **25–29 s after `Finished entering world`** (41–50 s after `AntiCheat Session Begin`). Separately, some launches froze at
+start-up (after `Successfully connected to Stomp` or `OnRegionListReceived`, before `Destination set`) with the main thread asleep and no CPU use — the pre-join stall, a separate cause covered below.
 
 Measured over the first ~40 sessions on an M2 Air (stock FEX behaviour): 15 timed out, 14 were fine for the whole observation
 window (≥ 75 s of log), 6 hung at start-up. Sessions shorter than ~75 s of log cannot show the timeout and must not be counted as
 healthy (`tools/harness/classify_runs.py` marks them `short`).
-
-## What it is not
-
-* **Not the power throttle.** The time-out happened with the CPU at full speed and full frame rate (detail in the local notes).
-* **Not `yt-dlp.exe`**, although it runs at the same time (it starts when the world has loaded). Sessions where it took 30 s
-  were fine and sessions where it took 10 s timed out. The wedge below starts *before* it is launched.
-* **Not the measurement tools.** Sessions with no recorder at all time out as often.
-* **Not memory pressure.** No swap, reclaim or major-fault differences between healthy and failing sessions.
-* Not related to world content timings (instantiate, GC and join times are the same in good and bad sessions).
 
 ## What was recorded
 
@@ -88,11 +80,13 @@ signal`, and its guest-visible mask (`CurrentSignalMask`, what `rt_sigprocmask` 
 `rt_sigreturn`. A handler that saves "the old mask", blocks signals for a server call and then restores what it saved therefore
 unblocks the signal it is running for, and `SIGUSR1` can nest inside its own handler while the thread is parked in a suspend.
 Wine's server keeps a stack of waits per thread and the client has special code for replies "stolen" by a nested wait, but that
-is written for the depth Linux allows. Stock FEX (2609.1, and its main branch when this was written) behaves the same way.
+is written for the depth Linux allows. Stock FEX behaves the same way: 2609.1, and FEX-2610 (released 2026-10-07), whose `SignalDelegator.cpp` is unchanged from 2609.1.
 
 `FEX_SIGNALMASKFIX=1` makes FEX behave like Linux: the handler runs with `interrupted | sa_mask | signal` (minus the signals FEX
 needs unblocked), `rt_sigprocmask` inside the handler sees that, and `rt_sigreturn` restores the interrupted mask and re-raises
-anything that became unmasked while it was recorded as pending.
+anything that became unmasked while it was recorded as pending. Without the handler's `uc_sigmask`/`rt_sigprocmask`
+step, the reproducer above wedges whether or not the trace is on. On a writable build only the control arm is run without it
+(`FEX_SIGNALMASKFIX=0`), since the fix and the trace share the one patch whose default is `true`.
 
 `FEX_SIGNALTRACE=1` records every host signal arrival, masking decision, delivery, `rt_sigreturn`, `rt_sigprocmask` made inside
 a handler and `kill`/`tgkill` call into `/dev/shm/fex-<pid>-sigtrace`; `tools/harness/sigtrace.py` follows a signal through
@@ -111,126 +105,83 @@ difference between the arms):
 | `FEX_SIGNALMASKFIX=1` | **0** | 1 | 7 |
 
 Among the sessions that reached a world: time-outs 4 of 7 against 0 of 7 (Fisher exact p = 0.07); counting hangs too, failures
-5 of 8 against 1 of 8 (p = 0.12). The sample is small, but it agrees with the reproducer above and with the mechanism, and no
-session with the fix behaved differently from the unpatched ones in any other way.
+5 of 8 against 1 of 8 (p = 0.12). The A/B alone is small, but it agrees with the reproducer above and with the mechanism.
 
-## The pre-join stall is something else
+Since the fix became the default, every session has run with it: **59 sessions** that reached a world and were observed
+for at least 40 s after entering it (the time-out always hit 25–29 s in), **none** timed out — against about one in two
+before the fix. (They are the sessions of the later A/Bs and censuses; one session timed out 105 s after entering a world,
+which is not this failure's signature.)
 
-A **pre-join stall** looks nothing like the time-out and is **not fixed by the mask fix**. A census of **99 sessions**
-puts its rate at **~8 in 99 (≈8 %), not "1 in 5"**, and it arrives in **batches** rather than uniformly. In this stall
-the VRChat log goes silent for **~60 s** between `Successfully connected to Stomp` and `Destination fetching`
-(healthy sessions take ~1 s), then switches region with the Photon client stuck in `current state: Disconnecting`
-(healthy: `ConnectedToNameServer`), fails with `Failed to connect to region, status was: Disconnecting`, and retries every
-~31 s. Sometimes it resolves slowly and the session proceeds; sometimes it loops. It has **two shapes**: most sessions
-stall *before* `Destination fetching`, one observed *between* `Destination fetching` and `Destination set`. The string
-`current state: Disconnecting` is a **perfect marker** — exactly the stalling sessions print it, and every other session
-opens with `ConnectedToNameServer`. It happens in **both** arms of the A/B (`ab54`/`ab59` control, `ab62` with
-`FEX_SIGNALMASKFIX=1`), so it is not the signal-mask bug.
+## The pre-join stall: IL2CPP thread-pool starvation
 
-A thread snapshot taken at the stall (no ptrace, `FEX_PROFILESAMPLEHZ=1`) showed:
+A **pre-join stall** looks nothing like the time-out and is **not fixed by the mask fix**. In it the game freezes for a
+fixed ~60 s (sometimes ~110 s) while looking up the Photon region, then switches region with the Photon client stuck in
+`current state: Disconnecting`, fails with `Failed to connect to region, status was: Disconnecting` and retries every
+~31 s. Some sessions recover; others keep looping and can end in an abrupt exit. A census of **99 sessions** put its rate
+at **~8 %**, arriving in batches.
 
-* threads read as parked in `read(fd, buf, 0x10)` on a **pipe** (Wine's `wait_select_reply`) — not discriminating: the
-  register decode for the snapshot's 1280-byte record layout was wrong, and that wait is the idle footprint in every
-  session ([wine-socket-analysis.md](wine-socket-analysis.md));
-* a **Cloudflare `:443` socket** of the game with ~5 KB of unread data, **no thread reading it**, no thread in
-  `recvfrom`/`recvmsg`;
-* wineserver idle in `epoll_wait` holding that socket, its per-fd registration gone from `events: 1b` (`EPOLLIN|EPOLLPRI`;
-  the kernel ORs in `ERR|HUP`) to `events: 18` with data still queued.
+**Cause:** the game's IL2CPP managed thread pool starts with as many workers as Windows reports CPUs. The muvm guest gets
+the host's **performance cores only — 4 vCPUs on an M2** — so the pool starts with 4 workers, where a desktop PC reports
+8–32 CPUs. During start-up a burst of work items blocks synchronously on asynchronous work; when the burst
+exceeds the pool, the continuation that would post the next receive on the Photon NameServer websocket cannot run, the
+NameServer's reply sits unread in the socket, and the main thread waits until a ~60 s timeout gives up. The pool's
+starvation monitor adds about two workers a second the whole time, none of which helps.
 
-The still-valid conclusion is the socket-level one: **unread data with no reader**. Which exact registration state is the
-stall's is settled by the later `wedgewatch` captures — `0x1a` (event-select mode, `FD_READ` reported and not re-armed) with
-`Recv-Q > 0`, on two managed sockets at once; healthy sessions read `0x1b`, and `0x18` is a *separate* state (a queued
-async that was completed and never collected). The FEX epoll/eventfd path was ruled out (plain pass-through:
-`x64/EPoll.cpp`; `EPOLLERR|EPOLLHUP` are always ORed in by the kernel, so a mask alone is not proof of loss). The earlier
-"start-up hang" snapshots (~140 threads in `NtWaitForAlertByThreadId`, 13 in `futex_waitv`) are a third variant of the
-same "the game's own threads stop making progress at start-up" family.
+**Fix:** report more CPUs to Windows code with Proton's `WINE_CPU_TOPOLOGY` (an upstream Proton setting, no patch):
 
-### Traced: the stall is not a FEX bug
+```
+WINE_CPU_TOPOLOGY=16:0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3
+```
 
-A trace with `FEX_SIGNALTRACE=1` (every FEX process, including the x86-64 wineserver, writes a ring) captured a stall.
-With the snapshot decode corrected for this build (the record grew to 1280 bytes; `tools/harness/resolve_snap.py`
-auto-detects 640 vs 1280) the reading was:
+This tells the game it has 16 logical CPUs mapped onto the guest's 4, so the pool starts with enough workers. It does not
+change how many CPUs actually run the game. `scripts/set-launch-options.sh` adds it.
 
-* two threads looked parked in a read — `WebSocketClient` (fd 294) and `VRCNPServer` (fd 316) — on what was read as an
-  **empty server-reply pipe**; every other thread in `futex(FUTEX_WAIT)` on Wine's `NtWaitForAlertByThreadId`;
-* every futex-blocked thread had the **futex word equal to the value it waits for** (118/118, then 167/167): no
-  lost-wake-up signature;
-* `SIGUSR1` fully delivered — 683 of 683 arrivals reached a guest handler (0 masked); 3 deferred;
-* wineserver's epoll held the game's `:443` socket (`ino 17758`) with 49 bytes unread at the first snapshot and the socket
-  in `CLOSE-WAIT` at the second, with no 16-byte reply write to those pipes in the ring.
+### Evidence
 
-**That "parked on the reply pipe" reading does not hold up** (see [wine-socket-analysis.md](wine-socket-analysis.md)): the
-register decode for the snapshot's 1280-byte record layout was wrong, and the same threads sit in that
-wait in *every* session — it is the idle-state footprint, not a stall signature. The still-valid part is the FEX
-negative: FEX's futex syscall is a raw host pass-through (`Passthrough.cpp:474`, one `svc #0`; address, op, expected
-value and bitset forwarded verbatim, `-EINTR` returned as-is) — there is no FEX code path between a host `futex_wake`
-and the waiter, and none that could swallow a pipe write. So the fault is **not** in the ptrace/signal/syscall
-emulation. The discriminating evidence is wineserver's epoll registration: `0x1a` (no `EPOLLIN`) with data queued on
-both stuck sockets, `FD_READ` reported and never re-armed. The signal fixes in this series do not remove this stall, and
-are not expected to.
+**1. The freeze is quantized.** The time from `Locating best region` to `Got best network region` in every saved log:
 
-### Captured in the act: it is a *quiet* 61 s hang at the Stomp→world-fetch hand-off
+| sessions | region lookup |
+|---|---|
+| 152 healthy | 2–10 s (median 4) |
+| 25 of 26 stalled | **62–68 s** (18 sessions) or **107–113 s** (7) |
 
-A socket-level capture of a live stall (launch loop that watches the log for a >12 s quiet gap past
-`Beginning room transition`, then snapshots `ss -tinep` + `/proc/net/tcp` + `/proc/net/snmp` inside the guest and
-`ss`/SNMP on the host; `sandbox/capture_stall.sh`) narrows the "environmental" side further. The stalled log's **last
-mutable line** is `[LogEOSMessaging] Successfully connected to Stomp` (plus one `Websockets API connected`); nothing after
-it for 61 s. The socket state at that instant:
+(The 26th stalled session found its region in 4 s and stalled later, at the region connect.) Healthy and stalled
+sessions do not overlap, and the stalled values are a fixed timeout (sometimes hit twice), not slow
+networking. The whole Unity log is silent for that time.
 
-* **No flow to the destination is ever opened.** The game holds no connection to the EU region endpoint — the stall is
-  between "world info fetched" and "region join", i.e. the client never gets as far as dialling Photon.
-* **The only stalled TCP flow is the websocket's own connection**, `192.168.1.102:55580 → 216.120.180.19:443`, in
-  `CLOSE-WAIT` (peer sent FIN; the client never closes). The peer is the Photon **NameServer**
-  (`216.120.180.19` = `ns-eu.photonengine.io`); its FIN drops a connection that sat idle through the ~60 s hang, so it is
-  a consequence of the stall rather than its trigger.
-* **A backpressured read is sitting unread**: `[2606:4700::6812:1a24]:443` (Cloudflare) with **Recv-Q 138 and no thread
-  in `recvfrom`/`recvmsg`** — data arrived and nothing is draining that socket, the read-drain symptom.
-* **The transport is clean, and the dead flows are dead.** Every VM flow on the host is `mss:1448 pmtu:1500 rtt<20ms`.
-  Two `FIN-WAIT-1` flows to `2.23.90.177:443` (Akamai) sit at `backoff:8` (`rto:53760`, `lastrcv:lastack≈385 s`) and have
-  **no guest-side counterpart in `/proc/net/tcp`** — stale host sockets from a connection the guest has already abandoned,
-  not the stall (their `last*` ages predate the stall by minutes).
+**2. The game is idle, not busy.** `tools/harness/stallwatch.py` fires when the region lookup has not finished 12 s after it
+started, and takes two in-process thread snapshots (patch 0006) 28 s apart. In both, the main thread is in the *same*
+timed wait (`NtWaitForAlertByThreadId`, same futex, same timeout argument), and 94 of 96 threads have not moved —
+rendering, DXVK and the job system are all parked. Meanwhile **49 new `IL2CPP Threadpool worker` threads** appeared,
+~1.75 per second, each going straight into a wait.
 
-So the stall is a **cause, not a transport failure**: the response is present in the guest (bytes queued, transport
-clean), and the client's read-drain stops. An EOS SDK-config / Stomp reconnect does not explain it — the CLOSE-WAIT
-websocket is the Photon NameServer dropping an idle connection (a *consequence*), and the shared `0x1a` read-drain state
-on two independent managed sockets points at the socket layer between IL2CPP and Wine (see
-[wine-socket-analysis.md](wine-socket-analysis.md)). Wine's fsync mode was tested and **rejected** as a fix — see below.
+**3. Every stall shows the pool exploding.** `tools/harness/poolmon.sh` counts the pool's threads once a second. A stalled
+start-up: 6 workers at launch, steady growth of ~2 per second from t ≈ 13 s to t ≈ 61 s (110 workers), then growth stops
+at the moment the timeout releases the waits. A healthy start-up stays at 4–11 workers. Every older stall snapshot on disk
+shows 46–137 pool threads, growing between its two snapshots; in-world snapshots show 13.
 
-### `PROTON_NO_FSYNC` makes the stall *worse*, not better (interleaved A/B)
+**4. The socket side.** At every captured stall the Photon NameServer socket (`ns.photonengine.io`,
+`216.120.180.19:443`) holds ~49 unread bytes, and wineserver has it registered for `EPOLLPRI` only
+(`/proc/<wineserver>/fdinfo` shows `events: 1a`). `tools/harness/wsmem.py` reads wineserver's own `struct sock` state
+passively; read during a stall's retry loop (by then the NameServer socket itself is closed), the game's other `0x1a`
+sockets have no event-select mask, no queued receive and no poll request of their own — so their `EPOLLPRI` can only come
+from a pending `select()` that lists them for errors, not for reading. `0x1a` with queued data therefore means **the
+application has no receive outstanding**; wineserver is right not to poll for input. That is what a starved continuation
+looks like from the socket side.
 
-The standalone reproducer ([Reproduced outside the game](#reproduced-outside-the-game)) wedges under Wine fsync but never
-with `PROTON_NO_FSYNC=1`, which suggested running the game without fsync to remove the stall. An interleaved A/B in one VM
-(16 launches planned, arms `ctl` and `nof` alternating every launch, 150 s each, arm injected through Proton's
-`user_settings.py`) gives the opposite answer. The batch stopped itself at session 15 when the Steam account went in-game
-on the user's other PC, leaving a clean **7 pairs (14 sessions, carried from 19:13 to 19:47)**:
+**5. The fix, A/B-tested.** Interleaved in one VM boot (the arms alternate every launch, so time-varying server or host
+conditions hit both equally), recording the pool size and the region time of every launch:
 
-| arm | joined | stalled |
-|---|---|---|
-| `ctl` (Wine fsync, Proton default) | **7** | **0** |
-| `nof` (`PROTON_NO_FSYNC=1`) | **3** | **4** |
+| arm (interleaved, one VM boot) | launches | stalled | region lookup | peak IL2CPP pool |
+|---|---|---|---|---|
+| default — 4 CPUs reported | 8 | **5** | 4–7 s when it joined; **64–112 s** when it stalled (this A/B) | 7–11; **96–110** when stalled |
+| `WINE_CPU_TOPOLOGY=16:…` — 16 CPUs reported | 6 | **0** | **3 s, every launch** | 13–18 |
 
-Both stall shapes appeared in the `nof` arm (2 quiet hangs before `Destination fetching`, 2 the `Switching to network
-region eu (current state: Disconnecting)` → 31 s retry shape). So on the real game the server-side-wait mode is *worse*
-for the stall — the reproducer's fsync result does not transfer. **Keep the Proton default (fsync); do not set
-`PROTON_NO_FSYNC`.**
-
-### MTU was necessary but not sufficient (and a WiFi-power-save candidate)
-
-The guest virtio-NIC comes up at MTU 65520 while the real path is 1500, which produces ~43 KB TCP super-segments
-(retransmitted) and drops large UDP datagrams; that alone causes a stall-shaped failure and is now fixed at boot
-(`passt -m 1500`, or `--passt-args=-m1500` to muvm — a single token so it survives the unquoted `$MUVM_ARGS`
-interpolation in `scripts/vm/vm_up.sh`). With the guest at MTU 1500 the transport is clean — UDP to the Photon master
-(216.120.180.19) is 0 % loss for 512/1200/1400/1472-byte datagrams, external TCP is `mss:1460 pmtu:1500`, DNS 40/40
-and HTTPS 40/40 sub-second — **and the stall still happens**, at either sub-step (`Requesting join token`, i.e. HTTPS,
-or `Connecting to realtime network`, i.e. the UDP region connect). So MTU is a real sub-case, not the whole story; the
-mechanism above (unread data on an event-select socket whose `FD_READ` was never re-armed) is unchanged.
-
-One host-side candidate — WiFi power-save (bursty link latency vs the join deadlines) — was **tested and rejected**. An
-interleaved A/B with the network interface bounced between power-save `off` and `on` every launch in a single VM, so any
-time-varying server/host condition hit both arms equally: 16 launches gave **power-save on 7 join / 1 stall, power-save
-off 7 join / 1 stall** — identical. Every log was re-checked individually (a stall is `Finished entering world` = 0 with a
-`current state: Disconnecting` line; a join is the reverse). The stall rate here was 2/16 (≈ 13 %), in line with the
-census, and independent of the interface state. So power-save is not the trigger; the environmental cause is still open.
+Fisher's exact test, one-sided: p = 0.028 (0.09 counting only the six strictly alternating pairs). The default arm's
+stall rate in this stretch (5 of 8) was far above the long-run ~8 %, which is the batching seen in every census; the
+treatment never stalled and never let the pool grow, and its region lookup was a flat 3 s — the pool never ran short.
+Delivered the way it ships — in the launch options written by `scripts/set-launch-options.sh` — the first
+confirmation launch joined the same way: region found in 3 s, pool peak 13.
 
 ## How to capture and read a wedge
 

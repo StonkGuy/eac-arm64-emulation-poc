@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Generates bigcode.h: a ~58k-instruction straight-line x86-64 function (as top-level inline asm) that fexbench executes
+# Generates bigcode.h: a ~55k-instruction straight-line x86-64 function (as top-level inline asm) that fexbench executes
 # exactly once, so its run time is dominated by FEX's translation throughput. Deterministic (fixed seed).
 import random, sys
 random.seed(7)

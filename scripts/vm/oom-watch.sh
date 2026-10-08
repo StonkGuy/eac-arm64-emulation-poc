@@ -3,7 +3,8 @@
 # virtio_balloon) and its `/` is virtiofs onto the host disk, so once VRChat's working set (~5 GB anon) plus
 # Steam/Wine fills the guest, the *guest kernel's own OOM killer* kills VRChat.exe -- the game "joins then dies".
 # This watches the guest's available memory and posts a desktop notification before that happens, and reports an
-# actual OOM kill (and host memory pressure) if it does. Read-only: it never changes VM state.
+# actual OOM kill (and host memory pressure) if it does. Read-only: it reads the guest's memory counters (as root,
+# through muvm) and never changes VM state.
 #
 #   scripts/vm/oom-watch.sh [POLL_SECONDS]        (default 15)
 # Environment: OOM_WATCH_LOW_MB (500) guest-available warning, OOM_WATCH_CRIT_MB (200) critical,

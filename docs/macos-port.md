@@ -1,8 +1,9 @@
 # Sketch: a macOS port
 
-**Status: a plan, not a result.** Nothing here has been tried. It records how the Asahi setup could be re-created on a
-macOS host and the single experiment that decides whether it is worth doing. See
-[platform-viability.md](platform-viability.md) for the evidence behind each claim.
+**Status: a plan, not a result.** Nothing has been tried on macOS. The repository has run on exactly one host — the
+Apple M2 / Fedora Asahi Remix 44 machine described in [setup-asahi.md](setup-asahi.md) — and every claim below about a
+macOS host is untested. This page records how that stack could be re-created on macOS and the single experiment that
+decides whether it is worth doing. See [platform-viability.md](platform-viability.md) for the evidence behind each claim.
 
 ## What carries over, what is rebuilt
 
@@ -16,16 +17,18 @@ Hypervisor.framework) and the same FEX + Wine/Proton + DXVK layers. Two concrete
 
 What is **replaced**: the host graphics path. Asahi uses DRM native context (host GPU driver + guest Mesa, near-native);
 macOS has no such path for Linux guests, so it would use **Venus (virtio-gpu) → virglrenderer → MoltenVK → Metal**,
-which is more feature-limited (no DX12 beyond feature level 11_0 / SM 6.0). What is **dropped**: muvm itself — Apple
-virtualisation gives 4 KB pages natively, so no page-size micro-VM is needed.
+which is more feature-limited: DX12 tops out at feature level 11_0 / SM 6.0 on MoltenVK (12_0 on the newer
+KosmicKrisp driver, macOS 26+), and neither reaches SM 6.2+ or Tiled Resources Tier 3. What is **dropped**: muvm itself
+— Apple virtualisation gives 4 KB pages natively, so no page-size micro-VM is needed.
 
 The `steamac` project is the worked example of this stack (its own claim: libkrun + Venus + FEX + Proton 11 ARM64 +
 DXVK, running DX11 titles). A port would either build on it or reproduce its host glue.
 
 ## The one experiment that decides it
 
-Everything except EAC is demonstrated or mechanical. The open question is whether **EAC's sanctioned Linux/Proton client
-accepts a macOS-libkrun guest** the way it accepts the Asahi-muvm one. That is a controlled A/B, not a build.
+Everything except EAC is either reported end to end on a Mac (the `steamac` stack, on that project's own account) or
+mechanical. The open question is whether **EAC's sanctioned Linux/Proton client accepts a macOS-libkrun guest** the way
+it accepts the Asahi-muvm one. That is a controlled A/B, not a build.
 
 ### Hypothesis
 
@@ -82,9 +85,10 @@ the arms diverge; a failure at/before `Loader initializing` or the CDN fetch is 
 
 The port is then engineering — but not trivial engineering on the graphics side. The host glue is a stack of **patched,
 version-pinned, non-upstream** components, not a package you install: `virglrenderer` is pinned to one revision for the
-Venus protocol ABI, the guest Mesa is a COPR build (upstream Mesa is not enough on macOS), MoltenVK is a patched fork, and
-there are known 16 KB-blob alignment fixes. Stock `podman`+libkrun is **compute-only** (Vulkan compute shaders, no
-rendering); the *rendering* path is what `steamac` added. So the work is: reproduce that host glue for a plain Linux guest,
+Venus protocol ABI, the guest Mesa is built from pinned sources (upstream Mesa as packaged is not enough on macOS),
+MoltenVK is a patched fork, and there are known 16 KB-blob alignment fixes. The *rendering* path is what `steamac` added
+on top of the libkrun/Venus plumbing (without it, a Venus guest is compute-only, with no rendering). So the work is:
+reproduce that host glue for a plain Linux guest,
 build the patched FEX, wire Steam/Proton, and tune (thermals; the strict-NAT UDP path for VRChat's Photon traffic;
 microphone capture — both unproven on this stack).
 

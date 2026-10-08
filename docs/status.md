@@ -1,6 +1,6 @@
 # Status
 
-Last updated 2026-10-07. VRChat on Apple M2 / Asahi, patched FEX 2609.1. This is a one-game, one-machine proof of
+Last updated 2026-10-08. VRChat on Apple M2 / Asahi, patched FEX 2610 (developed on 2609.1). This is a one-game, one-machine proof of
 concept — read "works" and "open" accordingly.
 
 ## Works
@@ -8,33 +8,15 @@ concept — read "works" and "open" accordingly.
   rendering through DXVK, UI input, audio device enumeration.
 * `tests/ptrace-inject` passes (28 checks). `tests/signal-mask` and `tests/signal-regs` pass on a Linux kernel
   (aarch64 builds) and under the patched FEX in the VM; on stock FEX they fail ([signal-registers.md](signal-registers.md)).
-* **No Photon time-outs** in the sessions that ran with the signal-mask fix: 0 of 7 vs 4 of 7 control, and the Wine
-  reproducer 0 of 6 vs 6 of 6 ([disconnects.md](disconnects.md)).
+* **No Photon time-outs** with the signal-mask fix: 0 of 7 vs 4 of 7 control in the A/B, 0 in the 59 sessions run since
+  (before the fix about one in two), and the Wine reproducer 0 of 6 vs 6 of 6 ([disconnects.md](disconnects.md)).
+* **No pre-join stall** with `WINE_CPU_TOPOLOGY` reporting 16 CPUs (set by `scripts/set-launch-options.sh`): 0 of 6
+  launches vs 5 of 8 default launches interleaved in the same VM boot, region lookup a flat 3 s. The stall — a ~60 s
+  freeze at the Photon region lookup and a `Disconnecting` rejoin loop, ~8 % of launches long-run — is IL2CPP thread-pool
+  starvation on a 4-vCPU guest, not a FEX or Wine bug ([disconnects.md](disconnects.md#the-pre-join-stall-il2cpp-thread-pool-starvation)).
+  It is a configuration fix; the evidence behind the mechanism is in that section.
 
 ## Open
-* **A pre-join stall** (a census of 99 sessions puts it at **~8 in 99 ≈ 8%**, not "1 in 5"; it arrives in batches, not
-  uniformly). A silent ~60 s gap before the world's destination is fetched (healthy: ~1 s), then the region connect
-  fails and the client retries every ~31 s. It has **two shapes** — most sessions stall *before* `Destination fetching`,
-  one observed *between* `Destination fetching` and `Destination set` — and `current state: Disconnecting` is a perfect
-  marker (exactly the stalling sessions print it; every other one opens with `ConnectedToNameServer`). It happens **with
-  and without** the signal-mask fix, so it is a different failure. It is **not a FEX bug**: FEX's `futex` is a raw host
-  passthrough and the x64 `epoll` calls convert the guest event struct correctly, so nothing sits between a server
-  wake-up and its waiter. What the socket state shows ([wine-socket-analysis.md](wine-socket-analysis.md)) is a
-  **read-drain** problem: at every stall the Photon NameServer socket and one VRChat API socket both hold unread data
-  while wineserver's epoll registration for them is `0x1a` (no `EPOLLIN`) — the socket is in event-select mode with
-  `FD_READ` already reported and not re-armed, waiting for a `recv` that never comes; healthy sessions read `0x1b`. Two
-  independent managed sockets go stale **in lockstep**, which points at one selector that stopped draining both rather
-  than a per-socket fault. The earlier "two threads parked on an empty wineserver reply pipe" reading does not hold up —
-  the snapshot decoder used the wrong record layout, and that wait is the idle-state footprint every session shows.
-  Patch 0009 (`rt_sigsuspend` no longer host-blocks FEX's own signals) is kept as a defensible correctness fix but is
-  **not** claimed to fix this; it was not A/B-tested against the stall. One transport sub-case is real and fixed: the
-  guest NIC's 64 KB MTU (see
-  [disconnects.md](disconnects.md#mtu-was-necessary-but-not-sufficient-and-a-wifi-power-save-candidate)) — with it
-  set to 1500 the transport is clean and the stall still fires, but it was one way to produce the shape.
-  Three host/launcher levers were **tested and rejected**: WiFi power-save (on 7 join/1 stall vs off 7 join/1 stall,
-  interleaved), Wine `PROTON_NO_FSYNC` (which **worsens** it — ctl 7 join/0 stall vs nof 3 join/4 stall, interleaved 7
-  pairs), and the MTU above. The stall's mechanism is established from the socket state in the saved stall captures; it
-  is not yet confirmed across a full run of live sessions.
 * **The guest can be OOM-killed** with a small `--mem`. The muvm guest kernel is stripped (no `zram` module, no
   `virtio_balloon` driver) and has **no swap**; its `/` is virtiofs onto the host disk, which is typically too full for a
   swapfile. VRChat's working set alone is ~4.7 GB anon, so a `--mem 7168` guest reaches its ceiling after world entry and
@@ -42,16 +24,19 @@ concept — read "works" and "open" accordingly.
   available memory in-world is still only a few hundred MB — the 16 GB host + swap-less, balloon-less guest is genuinely
   tight. Never returned to the host either: with no balloon driver, freed guest pages stay resident in the VM process
   until it is restarted.
-* **CPU throttling on the test machine** (bursts of ~5× slower for 12–18 s). **Measured and attributed** — a canary
-  process (identical work, every second) slows **3.16× / 5.25× / 4.84×** inside the three FPS-dip windows, while the
-  SoC collapses from ~22.4 W to ~11.9 W (sys) and heat from ~12.8 W to ~5.4 W. FEX's own counters are flat across a dip
+* **A host power clamp, not CPU contention** (bursts of ~4–5× slower work lasting ~8–18 s). **Measured and attributed** — a
+  canary process (identical work, every second) takes **3.16× / 5.25× / 4.84× longer** to finish inside the three
+  FPS-dip windows of one early capture while the SoC collapses from ~22.4 W to ~11.9 W (sys) and heat from ~12.8 W to ~5.4 W: the host stops
+  doing work rather than competing for a running core, so this is a machine-wide clamp rather than guest CPU starvation.
+  FEX's own counters are flat across a dip
   (`fexstats`: invalidation/SMC unchanged), memory is not implicated (`allocstall` = 0), and it is not GC. It is a
-  host-side power/thermal-budget governor — it fires on **AC mains**, at only ~56 °C SMC, so it is not overtemperature
-  but a sustained-power budget. Not an emulation artifact and not something FEX tuning can change.
+  host-side power-budget governor — it fires on **AC mains**, at only ~56 °C SMC, so it is not overtemperature
+  but a sustained-power budget. Not an emulation artifact and not
+  something FEX tuning can change.
 * **Intermittent EAC-client crash** (1 of 5 launches early on): null singleton inside the client at world instantiate.
   Not seen since; the client has produced **one minidump** (`ACCESS_VIOLATION` reading `0x14`, `RIP` inside
   `EACCLIENT+0x297ac`), which is where the "null singleton" reading comes from — it is one event, not a pattern, so the
-  cause stays unestablished. A crash-reporting hook (`crashhandler`) was left off after that; see
+  cause stays unestablished. It has not recurred, and no crash-reporting hook is installed; see
   [disconnects.md](disconnects.md).
 * **In-world video players** work for ordinary videos (an H.264/AAC MP4 resolved by the bundled `yt-dlp` played through
   AVPro/Media Foundation). One recurring failure is **not** a codec or emulation problem: the video used by the test
@@ -67,6 +52,4 @@ concept — read "works" and "open" accordingly.
   masking at all (hypervisor bit left set, `FEXIFEXIEMU` vendor visible) still completed
   `Launcher finished with: 301 …` 48 times. The **DMI/PCI axis is still unverified**: no controlled
   masked-vs-unmasked A/B was run for it, so it stays an open question, not a claim.
-* Whether the signal-mask fix removes *every* real-game time-out (0 of 7 so far); more sessions would firm it up.
-* Whether patch 0008 changes the pre-join stall rate.
 * Only VRChat has been tested. Other EAC titles use the same launcher/client machinery but may add their own checks.

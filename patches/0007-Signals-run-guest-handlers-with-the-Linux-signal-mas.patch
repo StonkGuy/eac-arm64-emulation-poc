@@ -1,7 +1,7 @@
-From d09856b1259360bc33060f91cdfb2f4fa38bc0a8 Mon Sep 17 00:00:00 2001
+From 7c4a6902214ddedcb4a861002db0938149869677 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 10:54:18 +0300
-Subject: [PATCH 7/9] Signals: run guest handlers with the Linux signal mask;
+Subject: [PATCH 7/10] Signals: run guest handlers with the Linux signal mask;
  optional signal trace
 
 While a guest signal handler runs, Linux blocks (interrupted mask | sa_mask | the signal unless SA_NODEFER) and rt_sigreturn
@@ -37,10 +37,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  create mode 100644 Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h
 
 diff --git a/FEXCore/Source/Interface/Config/Config.json.in b/FEXCore/Source/Interface/Config/Config.json.in
-index 3bcf41c..8d5488f 100644
+index 5e94fdf39..c5daac14d 100644
 --- a/FEXCore/Source/Interface/Config/Config.json.in
 +++ b/FEXCore/Source/Interface/Config/Config.json.in
-@@ -552,6 +552,25 @@
+@@ -591,6 +591,25 @@
            "ProfileSampleHz samples every guest thread instead of only the main one."
          ]
        },
@@ -67,7 +67,7 @@ index 3bcf41c..8d5488f 100644
          "Type": "uint32",
          "Default": "32",
 diff --git a/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h b/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
-index 02bb6bf..e2ed6b4 100644
+index 02bb6bfef..e2ed6b4dc 100644
 --- a/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
 +++ b/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
 @@ -41,6 +41,7 @@ struct X86ContextBackup {
@@ -87,7 +87,7 @@ index 02bb6bf..e2ed6b4 100644
    // Guest state
    int Signal;
 diff --git a/Source/Tools/LinuxEmulation/CMakeLists.txt b/Source/Tools/LinuxEmulation/CMakeLists.txt
-index 500e001..3f02104 100644
+index 500e00158..3f02104ea 100644
 --- a/Source/Tools/LinuxEmulation/CMakeLists.txt
 +++ b/Source/Tools/LinuxEmulation/CMakeLists.txt
 @@ -12,6 +12,7 @@ add_library(LinuxEmulation STATIC
@@ -99,7 +99,7 @@ index 500e001..3f02104 100644
    LinuxSyscalls/Seccomp/SeccompEmulator.cpp
    LinuxSyscalls/Seccomp/BPFEmitter.cpp
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index ffc178e..9a0104d 100644
+index ffc178e5a..9a0104d84 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -9,6 +9,7 @@ $end_info$
@@ -237,7 +237,7 @@ index ffc178e..9a0104d 100644
  
    if (oldset) {
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
-index c37d82c..5d3ad1a 100644
+index c37d82c3e..5d3ad1a07 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
 @@ -184,6 +184,8 @@ private:
@@ -251,7 +251,7 @@ index c37d82c..5d3ad1a 100644
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.cpp
 new file mode 100644
-index 0000000..703281c
+index 000000000..703281c47
 --- /dev/null
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.cpp
 @@ -0,0 +1,32 @@
@@ -289,7 +289,7 @@ index 0000000..703281c
 +} // namespace FEX::HLE::SigTrace
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h
 new file mode 100644
-index 0000000..9571433
+index 000000000..957143313
 --- /dev/null
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h
 @@ -0,0 +1,63 @@
@@ -357,7 +357,7 @@ index 0000000..9571433
 +}
 +} // namespace FEX::HLE::SigTrace
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Passthrough.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Passthrough.cpp
-index 4e70474..45cf085 100644
+index 4e70474a8..45cf08548 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Passthrough.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Passthrough.cpp
 @@ -10,6 +10,11 @@ $end_info$
@@ -439,7 +439,7 @@ index 4e70474..45cf085 100644
    REGISTER_SYSCALL_IMPL(set_mempolicy, SyscallPassthrough3<SYSCALL_DEF(set_mempolicy)>);
    REGISTER_SYSCALL_IMPL(get_mempolicy, SyscallPassthrough5<SYSCALL_DEF(get_mempolicy)>);
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/EPoll.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/EPoll.cpp
-index d1ab9cd..84c6129 100644
+index d1ab9cdf8..84c612940 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/EPoll.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/EPoll.cpp
 @@ -6,6 +6,7 @@ tags: LinuxSyscalls|syscalls-x86-64

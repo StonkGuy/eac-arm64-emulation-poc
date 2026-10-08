@@ -17,7 +17,7 @@
 // A second handler takes a SIGSEGV of its own (a load from address 0, skipped by a SIGSEGV handler) before its first system call:
 // the nested signal is the other consumer of the stale state, with no SMC involved. Raised with tgkill/kill/setitimer too.
 //
-// Expected: every case passes on Linux. On FEX 2609.1 the tgkill/kill cases fail (r8 holds the interrupted code's value).
+// Expected: every case passes on Linux. On unpatched FEX 2609.1 the tgkill/kill/tkill cases fail (r8 holds the interrupted code's value).
 // Build: tests/signal-regs/build.sh [clang]   (x86-64 binary, run it under FEX)   or   build.sh native (host architecture)
 // Run:   ./signal_regs_test   (exit status = number of failed cases)
 

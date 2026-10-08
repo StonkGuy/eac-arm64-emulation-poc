@@ -1,7 +1,7 @@
-From 551cee20a3885df78a614d1ef507cbb928ee96f6 Mon Sep 17 00:00:00 2001
+From 9e25586d85599a7c72ffc01bf535d5ce542cfb3f Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 01:52:28 +0300
-Subject: [PATCH 2/9] SMC: stop write-protecting pages that keep faulting,
+Subject: [PATCH 2/10] SMC: stop write-protecting pages that keep faulting,
  verify their code in the JIT instead
 
 With SMCChecks=mtrack a page that mixes code with data that is written all the time (trampoline pools, JIT heaps,
@@ -23,10 +23,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  create mode 100644 Source/Tools/LinuxEmulation/LinuxSyscalls/SMCHotPages.h
 
 diff --git a/FEXCore/Source/Interface/Config/Config.json.in b/FEXCore/Source/Interface/Config/Config.json.in
-index 136aa1c..0ce563b 100644
+index 938377f32..94f4597a9 100644
 --- a/FEXCore/Source/Interface/Config/Config.json.in
 +++ b/FEXCore/Source/Interface/Config/Config.json.in
-@@ -535,6 +535,16 @@
+@@ -574,6 +574,16 @@
            "\tfull: Validate code before every run (slow)"
          ]
        },
@@ -44,10 +44,10 @@ index 136aa1c..0ce563b 100644
          "Type": "bool",
          "Default": "true",
 diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
-index 8286c14..e89f652 100644
+index 63280a42a..7b2ec3d52 100644
 --- a/FEXCore/Source/Interface/Core/Core.cpp
 +++ b/FEXCore/Source/Interface/Core/Core.cpp
-@@ -638,7 +638,7 @@ ContextImpl::GenerateIR(FEXCore::Core::InternalThreadState* Thread, uint64_t Gue
+@@ -641,7 +641,7 @@ ContextImpl::GenerateIR(FEXCore::Core::InternalThreadState* Thread, uint64_t Gue
            Thread->OpDispatcher->_GuestOpcode(InstAddress - GuestRIP);
          }
  
@@ -57,7 +57,7 @@ index 8286c14..e89f652 100644
            auto InstAddressReg = Thread->OpDispatcher->_EntrypointOffset(GPRSize, InstAddress - GuestRIP);
  
 diff --git a/FEXCore/include/FEXCore/HLE/SyscallHandler.h b/FEXCore/include/FEXCore/HLE/SyscallHandler.h
-index 0ba0218..bf0cf6d 100644
+index 0ba0218e3..bf0cf6d6f 100644
 --- a/FEXCore/include/FEXCore/HLE/SyscallHandler.h
 +++ b/FEXCore/include/FEXCore/HLE/SyscallHandler.h
 @@ -33,6 +33,16 @@ public:
@@ -79,7 +79,7 @@ index 0ba0218..bf0cf6d 100644
    virtual void UnmarkOvercommitRange(uint64_t Start, uint64_t Length) {}
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SMCHotPages.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/SMCHotPages.h
 new file mode 100644
-index 0000000..42f51c2
+index 000000000..42f51c2ff
 --- /dev/null
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SMCHotPages.h
 @@ -0,0 +1,112 @@
@@ -196,7 +196,7 @@ index 0000000..42f51c2
 +
 +} // namespace FEX::HLE
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
-index 7b417e8..eb53e9d 100644
+index 4721fc3b2..7124a05a0 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
 @@ -14,6 +14,7 @@ $end_info$
@@ -214,8 +214,8 @@ index 7b417e8..eb53e9d 100644
 +  FEX_CONFIG_OPT(SMCHotPageFaults, SMCHOTPAGEFAULTS);
    FEX_CONFIG_OPT(NeedsSeccomp, NEEDSSECCOMP);
    FEX_CONFIG_OPT(EnableCodeCaching, ENABLECODECACHINGWIP);
- 
-@@ -287,6 +289,7 @@ public:
+   FEX_CONFIG_OPT(EnableDiskCache, DISKCACHE);
+@@ -288,6 +290,7 @@ public:
    ///// VMA (Virtual Memory Area) tracking /////
    static bool HandleSegfault(FEXCore::Core::InternalThreadState* Thread, int Signal, void* info, void* ucontext);
    void MarkGuestExecutableRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Start, uint64_t Length) override;
@@ -223,7 +223,7 @@ index 7b417e8..eb53e9d 100644
    void InvalidateGuestCodeRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Start, uint64_t Length) override;
    std::optional<FEXCore::ExecutableFileSectionInfo>
    LookupExecutableFileSection(FEXCore::Core::InternalThreadState* Thread, uint64_t GuestAddr) final override;
-@@ -361,6 +364,9 @@ private:
+@@ -362,6 +365,9 @@ private:
    // std::mutex CodeCachePatchingMutex;
    FEXCore::ForkableUniqueMutex CodeCachePatchingMutex;
  
@@ -234,10 +234,10 @@ index 7b417e8..eb53e9d 100644
    bool NeedToCheckXID {true};
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
-index cdad4b2..20f9980 100644
+index 94bdd378b..342223c1f 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
-@@ -107,10 +107,15 @@ bool SyscallHandler::HandleSegfault(FEXCore::Core::InternalThreadState* Thread,
+@@ -108,10 +108,15 @@ bool SyscallHandler::HandleSegfault(FEXCore::Core::InternalThreadState* Thread,
            } else {
              _SyscallHandler->TM.InvalidateGuestCodeRange(Thread, FaultBaseMirrored, FEXCore::Utils::FEX_PAGE_SIZE);
            }
@@ -253,7 +253,7 @@ index cdad4b2..20f9980 100644
      }
  
      FEXCORE_PROFILE_INSTANT_INCREMENT(Thread, AccumulatedSMCCount, 1);
-@@ -133,6 +138,10 @@ bool SyscallHandler::HandleSegfault(FEXCore::Core::InternalThreadState* Thread,
+@@ -134,6 +139,10 @@ bool SyscallHandler::HandleSegfault(FEXCore::Core::InternalThreadState* Thread,
    }
  }
  
@@ -264,7 +264,7 @@ index cdad4b2..20f9980 100644
  void SyscallHandler::MarkGuestExecutableRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Start, uint64_t Length) {
    const auto Base = Start & FEXCore::Utils::FEX_PAGE_MASK;
    const auto Top = FEXCore::AlignUp(Start + Length, FEXCore::Utils::FEX_PAGE_SIZE);
-@@ -142,6 +151,19 @@ void SyscallHandler::MarkGuestExecutableRange(FEXCore::Core::InternalThreadState
+@@ -143,6 +152,19 @@ void SyscallHandler::MarkGuestExecutableRange(FEXCore::Core::InternalThreadState
        return;
      }
  

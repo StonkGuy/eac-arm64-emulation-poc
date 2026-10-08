@@ -34,7 +34,7 @@ compared, step by step, with what happened under FEX.
    client from the memfd into the game. It repeats this for the client's init call (passing a parameter block), restores
    the registers and finally calls `PTRACE_DETACH`.
 
-In total this is ~530 ptrace calls and ~1 s natively.
+In total this is ~530 ptrace calls; on a native x86-64 Linux reference machine the launcher finishes in ~1.2 s.
 
 ## Why this does not work out of the box under FEX
 
@@ -78,7 +78,7 @@ Stock FEX handles a small passthrough subset of ptrace (enough for Ubisoft's Win
 Limitations: only the main thread of a tracee is traced; register reads/writes work at the stops FEX itself produces,
 not at a real `kill(self, SIGSTOP)` stop; `PTRACE_ATTACH` to an already running FEX process is not emulated.
 `tests/ptrace-inject` is a freestanding x86-64 program that performs the whole conversation above and must print
-`RESULT: PASS` both natively and under FEX.
+`RESULT: PASS` under FEX. (The same binary targets native x86-64 Linux as the reference; that run is not recorded here.)
 
 ## SMC hot pages (`patches/0002`)
 
@@ -91,9 +91,10 @@ it, so correctness is preserved and the storm stops. Setting `FEX_SMCHOTPAGEFAUL
 ## Not part of the emulation: environment realism
 
 VRChat's guide "Using VRChat in a Virtual Machine" documents that EAC's VM block is its CPUID hypervisor-vendor check
-and lists the hardware data to make look real (SMBIOS/DMI strings, PCI devices, hostname), adding that it does not mind
-people doing this in some cases. Because the arm64 setup runs Steam inside a microVM (muvm), `scripts/vm/realism.sh`
-ships an *optional* module that exposes plausible DMI/PCI/hostname data to the guest.
+and describes the hardware data to make look real (the SMBIOS/DMI and baseboard strings the guest reports), adding that
+it does not mind people doing this in some cases. Because the arm64 setup runs Steam inside a microVM (muvm),
+`scripts/vm/realism.sh` ships an *optional* module that goes a little further, exposing plausible DMI, PCI and hostname
+data to the guest; the guide itself covers only the CPUID and SMBIOS/DMI axes.
 
 Two things to keep straight about it:
 
@@ -126,8 +127,9 @@ Attaching `ptrace`/`perf` to a process running Easy Anti-Cheat is detected at on
 (Debugger detected.)") and must not be attempted. `FEX_PROFILESAMPLEHZ=<hz>` (with `FEX_PROFILESAMPLEALLTHREADS=1` and
 `FEX_LIBRARYJITNAMING=1`) starts an in-process sampler once the process has more than 100 guest threads; create
 `/dev/shm/fex-<pid>-sample-on` inside the VM to sample, delete it to stop, then resolve
-`/dev/shm/fex-<pid>-samples` with `tools/resolve_samples.py` (needs `/tmp/perf-<pid>.map`, the process's `maps` and an
-unstripped FEX binary).
+`/dev/shm/fex-<pid>-samples` with `tools/resolve_samples.py`: copy the samples, `/tmp/perf-<pid>.map` and the process's
+`maps` into one directory as `samples<TAG>.bin`, `perf<TAG>.map`, `maps<TAG>.txt` and run
+`resolve_samples.py <TAG> <unstripped FEX binary>`.
 
 What the samples mean: in all-threads mode only threads whose CPU time advanced since the previous round are signalled
 (a process has hundreds of idle threads), so the result describes what *recently busy* threads were doing at the

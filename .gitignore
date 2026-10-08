@@ -8,3 +8,5 @@ __pycache__/
 *.pyc
 tests/*/*_test
 tests/ptrace-inject/ptrace_inject_test
+tests/bench/fexbench
+tests/bench/bigcode.h

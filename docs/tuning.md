@@ -8,7 +8,7 @@ the kernel OOM-killed the whole VM ("the game crashed"). Order of importance:
 
 | Knob | Where | Why |
 |---|---|---|
-| `muvm --mem 8192 --vram 4096` | `scripts/vm/steam-vm.sh` | muvm defaults to 80 % of RAM for the guest and 50 % of RAM reported as VRAM; Unity sizes its caches from that (`SystemInfo.graphicsMemorySize` was 7813 MB). The guest has **no swap** (stripped kernel: no `zram`, no `virtio_balloon`; `/` is virtiofs onto the host disk), so `--mem` below ~8192 lets the guest's own OOM killer kill `VRChat.exe` (~4.7 GB anon) once a world loads. |
+| `muvm --mem 8192 --vram 4096` | `scripts/vm/steam-vm.sh` | with muvm's defaults the guest gets most of the host's RAM and half of it is reported as VRAM; Unity sizes its caches from that (`SystemInfo.graphicsMemorySize` was 7813 MB). The guest has **no swap** (stripped kernel: no `zram`, no `virtio_balloon`; `/` is virtiofs onto the host disk), so `--mem` below ~8192 lets the guest's own OOM killer kill `VRChat.exe` (~4.7 GB anon) once a world loads. |
 | `--passt-args=-m1500` | `scripts/vm/steam-vm.sh` (`VM_MTU`) | the virtio NIC defaults to 65520 MTU against a 1500 path; passt's `-m` advertises 1500 over DHCP so eth0 comes up correct. Single argv token, so no shell quoting. |
 | `DXVK_CONFIG_FILE=scripts/dxvk.conf` | launch options | caps the memory heaps DXVK reports. |
 | `PROTON_USE_XALIA=0` | launch options | skips Proton's accessibility helper (~350 MB). |
@@ -60,7 +60,8 @@ already costs nothing in the JIT output. `FEX_TSOENABLED=0` therefore only chang
 ## 4. Code invalidation with many threads
 
 `mprotect` on a data page, 100k calls, 190 parked guest threads: stock FEX 790 ms, with `patches/0004` 32 ms (the same
-as with no extra threads). Games with hundreds of threads that churn memory mappings (Unity, Wine, DXVK, anti-cheat) pay
+as with no extra threads; ~25× on this `tests/bench` churn test — the ~22× quoted elsewhere is the per-call cost,
+7.9 µs vs 0.35 µs). Games with hundreds of threads that churn memory mappings (Unity, Wine, DXVK, anti-cheat) pay
 for this on every call.
 
 ## 5. Per-thread view while playing
@@ -73,25 +74,31 @@ On a 4-vCPU guest the Unity main thread (≈75 %), Wine's `wine64` server thread
 
 ## 6. Host power and throttling
 
-The frame-rate dips are **not** emulation: a fixed-work probe (`tools/canary.c`) run next to the game slows to **3.16× /
-5.25× / 4.84×** its normal time inside the three dip windows, while the SoC collapses from ~22.4 W to ~11.9 W (system) and
-~12.8 W to ~5.4 W (heat). FEX's own counters are flat across a dip and no memory stall is involved, so nothing in the guest
-or the translator is implicated. The trigger is the **power source**, not temperature: it fires on AC, at only ~56 °C SMC,
-because this machine is taking more than the adapter supplies and the firmware clamps it in bursts.
+The frame-rate dips are **not** emulation. The frame rate alternates between ~44 FPS (for ~8–18 s) and ~19–20 FPS (for
+~8–13 s), with a dominant period of ~39–44 s. A fixed-work probe (`tools/canary.c`, which prints the nanoseconds each
+fixed unit of work takes, so a larger number means a slower core) pinned to a performance core next to the game runs
+~4.1× slower in the low phase, while the SoC's system power falls to 0.67× and its heat output to 0.41× (the wall AC draw
+stays constant). These are means over the later 240 s captures split by frame-rate mode; the per-dip figures in
+[status.md](status.md) (3.2–5.3×, 22.4 → 11.9 W) come from three dips of one earlier capture and agree with them. FEX's own counters (`fexstats`: invalidation/SMC) are flat across a dip and no memory stall is involved,
+so nothing in the guest or the translator is implicated. It is a **sub-OS hardware clamp**: the OS's frequency readings
+look normal throughout. The trigger is the **power budget**, not temperature: it fires on AC, at only ~56 °C SMC, because
+this machine is taking more than the adapter supplies and the firmware clamps it in bursts.
 
 To check your own setup:
 
 * `tools/check-power.py` loads every performance core and reports whether the charger/port/hub is strong enough (a MacBook
   Air M2 under a game wants ~25–30 W; the 30 W charger in the Mac's own port, or MagSafe, no hub and no PC USB port).
-* `tools/powertl.py SECONDS OUT` records the SMC power/temperature timeline next to a run.
-* `sudo scripts/cpu-power.sh cap MHZ` keeps the performance cluster below a fixed clock so the fanless SoC never reaches the
-  firmware's clamp point — the trade is less peak speed for a flatter frame rate. `scripts/cpu-power.sh` is runtime-only and
-  `revert` undoes it.
+* `tools/powertl.py SECONDS OUT` records the SMC power/temperature timeline next to a run. Each line is `P <epoch>
+  sys= ac= heat= acv= aci= batv= batw= batI= nand= chg= wifi= soc=`: `sys` is the total system power, `ac` the AC input
+  power (staying constant across the dip is the signature), `heat` the heatpipe power and `soc` the battery state of
+  charge; `acv`/`aci` are the charger input voltage/current, `batv`/`batw`/`batI` the battery voltage/power/current, and
+  `nand`/`chg`/`wifi` temperature sensors.
 
 macOS does closed-loop thermal control for the SoC; Linux does not, so this class of throttle is an OS/firmware behaviour you
-have to manage yourself on Asahi. A frame rate that swings between ~45 and ~20 FPS with the same period as the power reading
-is the signature.
+have to manage yourself on Asahi. The reliable lever is the **power source**: a stronger supply (the Mac's own 30 W port or
+MagSafe, no hub) raises the budget and reduces how often the clamp fires. A frame rate that swings between ~44 and ~20 FPS
+with the same period as the power reading is the signature.
 
 ## Open issues
 
-See [status.md](status.md): the pre-join stall (~8 % of sessions) and the unverified items.
+See [status.md](status.md) for what remains open and unverified.

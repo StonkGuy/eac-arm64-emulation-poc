@@ -2,7 +2,7 @@
 
 This is the whole path from a fresh Fedora Asahi Remix install to VRChat in a world with genuine Easy Anti-Cheat. Every
 step is needed unless it says *optional*. Section 10 lists the exact versions of the last verified working setup;
-section 11 lists what breaks it. Other arm64 hosts: see `other-platforms.md`.
+section 11 lists what breaks it. Other arm64 hosts: see [other-platforms.md](other-platforms.md).
 
 ## 0. How the pieces fit
 
@@ -40,13 +40,13 @@ In Steam:
 3. Launch VRChat once. This creates the Proton prefix (`steamapps/compatdata/438100`), installs the
    **Proton EasyAntiCheat Runtime** tool (Library → Tools), and creates VRChat's entry in `localconfig.vdf` that the
    launch-option script edits. The launch is expected to fail with the stock FEX (the EAC launcher reports
-   `Unexpected error (#1)`).
+   `Unexpected error. (#1)`).
 4. Quit Steam completely.
 
 ## 3. Build the patched FEX
 
 ```sh
-scripts/build-fex.sh            # clones FEX at FEX-2609.1 (9fbdc00), applies patches/0001-0010, builds Release
+scripts/build-fex.sh            # clones FEX at FEX-2610 (14c9268), applies patches/0001-0010, builds Release
 scripts/vm/install-overlay.sh   # copies the binary to ~/.local/share/vrchat-fex-eac/fex/FEX
 ```
 
@@ -61,7 +61,8 @@ cd tests/ptrace-inject
 ./run-in-vm.sh              # throw-away muvm VM with the patched FEX registered for x86-64; must end with RESULT: PASS
 ```
 
-It performs the whole EAC-style injection conversation (28 checks). With the stock FEX the conversation fails early.
+It performs the whole EAC-style injection conversation (28 checks). Under stock FEX (2609.1, or Fedora's 2604 package) it
+prints `PASS: fork` and then hangs: the tracer waits for a first `ptrace` stop that never comes.
 
 Two more freestanding tests check what a guest signal handler sees. Build them with clang (x86-64 binaries, to run under
 FEX) and run them in the same throw-away VM, or inside the running Steam VM with `muvm -- sh -c '<binary> > file'` (the output
@@ -82,7 +83,7 @@ Both build natively too (`./build.sh native`, aarch64 or x86-64 host) as the ref
 sudo scripts/host-tune.sh apply     # zswap/zram/watermarks/readahead: keeps the host OOM killer off the VM
 ```
 
-See `tuning.md`. Optional: `scripts/cpu-power.sh` (CPU frequency policy; see `tuning.md` for the trade-off).
+See [tuning.md](tuning.md).
 
 ## 6. Launch options
 
@@ -97,12 +98,17 @@ This writes, for every Steam user that has VRChat:
 ```
 env EAC_LAUNCHERDIR=<prefix>/drive_c/users/steamuser/AppData/Roaming/EasyAntiCheat
     PROTON_EAC_RUNTIME='<steamapps>/common/Proton EasyAntiCheat Runtime'
-    WINEDEBUG=-all PROTON_USE_XALIA=0 DXVK_CONFIG_FILE=<repo>/scripts/dxvk.conf %command%
+    WINEDEBUG=-all PROTON_USE_XALIA=0 DXVK_CONFIG_FILE=<repo>/scripts/dxvk.conf
+    WINE_CPU_TOPOLOGY=16:0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3 %command%
 ```
 
 `EAC_LAUNCHERDIR` and `PROTON_EAC_RUNTIME` are what make Proton load the EAC runtime. `dxvk.conf` caps the memory DXVK
 reports to Unity at 3 GB (a 16 GB unified-memory machine otherwise looks like it has several GB of free VRAM).
-**Keep `WINEDEBUG=-all` and add nothing else** — see section 11.
+`WINE_CPU_TOPOLOGY` makes Windows code see 16 CPUs on the guest's 4 (the list shown is for a 4-CPU guest; the script
+counts the host's performance cores, which is what muvm gives the guest, or takes `VM_CPUS`):
+without it the game's thread pool starts too small and about 8 % of launches — more in bad stretches — freeze for
+~60 s at the region lookup and then loops on `Disconnecting` ([disconnects.md](disconnects.md#the-pre-join-stall-il2cpp-thread-pool-starvation)).
+Set `VRC_REPORT_CPUS=0` to leave it out. **Keep `WINEDEBUG=-all` and add no debug settings** — see section 11.
 
 ## 7. Start Steam inside the VM
 
@@ -113,10 +119,11 @@ REALISM=1 VM_MEM_MB=10240 VM_VRAM_MB=3072 scripts/vm/steam-vm.sh     # the verif
 Defaults: 8 GB guest RAM (`VM_MEM_MB`), 4 GB "VRAM" (`VM_VRAM_MB`), guest NIC MTU 1500 (`VM_MTU`), the VM in its own
 systemd scope with high CPU/IO weight and `MemoryLow=8G`. The verified run in section 10 used
 `VM_MEM_MB=10240 VM_VRAM_MB=3072`; both work. Do not go below 8 GB RAM: the guest has no swap and its OOM killer takes
-VRChat once a world loads.
+VRChat once a world loads (VRChat's working set alone is ~4.7 GB anonymous; `--mem 7168` gets OOM-killed after world
+entry, `--mem 8192` holds).
 
 The MTU setting matters: the virtio NIC comes up with a 64 KB MTU, and without the clamp TCP super-segments get
-fragmented and retransmitted and large UDP datagrams vanish (stutter and ~60 s stalls at the Photon region lookup).
+fragmented and retransmitted and large UDP datagrams vanish (stutter and failed region connects).
 
 Wait until Steam is logged in (the Steam window appears).
 
@@ -150,32 +157,33 @@ grep -cE "AntiCheat Session Begin: Success|Finished entering world" "$L"     # e
 
 ## 10. Verified working configuration
 
-Last verified 2026-10-07: EAC 301, `AntiCheat Session Begin: Success` 12 s after start, world joined 29 s after start,
-in-world until the VM was shut down ~100 s later. Dozens of sessions ran with this setup the same day.
+Last verified 2026-10-08 on FEX-2610: four launches in a row, each with EAC 301, `AntiCheat Session Begin: Success`, the
+Photon region found in 3 s and the world joined, then a 150 s in-world capture. (The same setup on FEX-2609.1 ran dozens
+of sessions on 2026-10-07.)
 
 | component | version / value |
 |---|---|
 | host | MacBook Air M2 16 GB, Fedora Asahi Remix 44, kernel `7.1.13-402.asahi.fc44.aarch64+16k` |
 | VM | `muvm-0.6.0-3.fc44`, `libkrun-1.19.0-1.fc44`, `libkrunfw-5.5.0-1.fc44`, `passt-0^20260728.gf8df3f1-2.fc44` |
 | GPU driver (guest) | `mesa-vulkan-drivers-26.1.8-1.fc44` |
-| FEX | FEX-2609.1 (`9fbdc00`) + `patches/0001`–`0010`, Release build, binary used only as the in-VM binfmt interpreter |
+| FEX | FEX-2610 (`14c9268`) + `patches/0001`–`0010`, Release build, binary used only as the in-VM binfmt interpreter |
 | Proton | Proton Experimental `experimental-11.0-20261001` + Proton EasyAntiCheat Runtime |
 | Steam runtime | SteamLinuxRuntime_4 `4.0.20260805.254769` |
 | VRChat | Steam build id `25738324` |
-| launch options | exactly the section 6 string: `WINEDEBUG=-all PROTON_USE_XALIA=0 DXVK_CONFIG_FILE=…` |
-| VM size | 10 GB RAM, 3 GB VRAM, MTU 1500 |
+| launch options | exactly the section 6 string: `WINEDEBUG=-all PROTON_USE_XALIA=0 DXVK_CONFIG_FILE=… WINE_CPU_TOPOLOGY=16:…` |
+| VM size | 8 GB RAM, 4 GB VRAM, MTU 1500 (10 GB / 3 GB also verified) |
 | environment realism | on (fake PID 1, DMI, PCI list, hostname — `REALISM=1`, see below); not tested without it since the ptrace emulation landed |
 | Proton `user_settings.py` | no settings needed (the verified run set only the in-process profiler at 1 Hz, which is harmless) |
 
 ## 11. What breaks it
 
-* **Wine trace channels, `PROTON_LOG=1` or FEX logging knobs in the launch options.** With
+* **Wine trace channels, `PROTON_LOG=1` or extra FEX debug settings in the launch options.** With
   `WINEDEBUG=err+all,+loaddll,+module,+seh PROTON_LOG=1 FEXHOTMEMFD=1` the EAC launcher still reports 301, but
   `VRChat.exe` dies ~3 s later inside `LdrInitializeThunk` while loading `kernel32.dll`, before Unity writes any log;
   the Proton log shows `err:virtual:virtual_setup_exception nested exception on signal stack`. Reproduced with three
   different FEX builds; going back to the section 6 string fixed it at once. Which of the three settings is responsible
   is not isolated — use none of them for play.
-* **A FEX build without patch 0001** (or the stock FEX): the EAC launcher ends with `210, 'Unexpected error. (#1)'`.
+* **A FEX build without patch 0001** (or the stock FEX): the EAC launcher ends with `Launcher finished with: 210, 'Unexpected error. (#1)'`.
 * **Installing a new FEX without restarting the VM:** the old binary stays registered (binfmt pins the inode).
 * **Attaching a debugger, `perf`, `strace` or any ptrace tool to the game:** EAC reports it ("Debugger detected").
 * **Starting Steam inside the VM as root** (`muvm --privileged -- …steam…`): FEX cannot reach FEXServer

@@ -1,7 +1,7 @@
-From 9b57ad98d66f2e4d3d38a65432ff8e652db3d5b1 Mon Sep 17 00:00:00 2001
+From 477a4c583c94c71867d0c7bb5cfad53d4eebe983 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 02:13:58 +0300
-Subject: [PATCH 4/9] Skip the per-thread cache walk when an invalidated range
+Subject: [PATCH 4/10] Skip the per-thread cache walk when an invalidated range
  holds no translated code
 
 Every guest mmap/munmap/mprotect invalidates its range, and the invalidation visited every thread: lock the shared
@@ -27,10 +27,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  7 files changed, 51 insertions(+), 14 deletions(-)
 
 diff --git a/FEXCore/Source/Interface/Context/Context.h b/FEXCore/Source/Interface/Context/Context.h
-index ffabdbd..627700e 100644
+index 9f427da20..925b35956 100644
 --- a/FEXCore/Source/Interface/Context/Context.h
 +++ b/FEXCore/Source/Interface/Context/Context.h
-@@ -224,8 +224,12 @@ public:
+@@ -223,8 +223,12 @@ public:
  
    void OnCodeBufferAllocated(const std::shared_ptr<CPU::CodeBuffer>&) override;
    void ClearCodeCache(FEXCore::Core::InternalThreadState* Thread, bool NewCodeBuffer = true) override;
@@ -46,10 +46,10 @@ index ffabdbd..627700e 100644
      return CodeInvalidationMutex;
    }
 diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
-index ce6d7a0..ecf3f71 100644
+index d0a4a5fca..922d1b414 100644
 --- a/FEXCore/Source/Interface/Core/Core.cpp
 +++ b/FEXCore/Source/Interface/Core/Core.cpp
-@@ -1059,29 +1059,35 @@ uintptr_t ContextImpl::CompileSingleStep(FEXCore::Core::CpuStateFrame* Frame, ui
+@@ -1045,29 +1045,35 @@ uintptr_t ContextImpl::CompileSingleStep(FEXCore::Core::CpuStateFrame* Frame, ui
    return (uintptr_t)CodePtr;
  }
  
@@ -89,10 +89,10 @@ index ce6d7a0..ecf3f71 100644
      FEXCORE_PROFILE_SCOPED("InvalidateCallRet");
      FEXCORE_PROFILE_INSTANT_INCREMENT(Thread, AccumulatedCallRetFlushCount, 1);
 diff --git a/FEXCore/Source/Interface/Core/Frontend.cpp b/FEXCore/Source/Interface/Core/Frontend.cpp
-index 6ae165c..1e1da37 100644
+index 78d5f1a2e..6667f169e 100644
 --- a/FEXCore/Source/Interface/Core/Frontend.cpp
 +++ b/FEXCore/Source/Interface/Core/Frontend.cpp
-@@ -93,6 +93,12 @@ bool Decoder::CheckRangeExecutable(uint64_t Address, uint64_t Size) {
+@@ -94,6 +94,12 @@ bool Decoder::CheckRangeExecutable(uint64_t Address, uint64_t Size) {
      return false;
    }
  
@@ -106,7 +106,7 @@ index 6ae165c..1e1da37 100644
      auto RangeInfo = CTX->SyscallHandler->QueryGuestExecutableRange(Thread, Address);
      ExecutableRangeBase = RangeInfo.Base;
 diff --git a/FEXCore/Source/Interface/Core/Frontend.h b/FEXCore/Source/Interface/Core/Frontend.h
-index d71a9c0..65af6f0 100644
+index 1fc0e6ed3..e62948e5b 100644
 --- a/FEXCore/Source/Interface/Core/Frontend.h
 +++ b/FEXCore/Source/Interface/Core/Frontend.h
 @@ -89,6 +89,8 @@ public:
@@ -119,7 +119,7 @@ index d71a9c0..65af6f0 100644
    // To pass any information from instruction prefixes
    // down into the actual instruction handling machinery.
 diff --git a/FEXCore/Source/Interface/Core/LookupCache.h b/FEXCore/Source/Interface/Core/LookupCache.h
-index 391d485..d42c792 100644
+index 391d48560..d42c792d4 100644
 --- a/FEXCore/Source/Interface/Core/LookupCache.h
 +++ b/FEXCore/Source/Interface/Core/LookupCache.h
 @@ -125,7 +125,8 @@ struct GuestToHostMap {
@@ -143,7 +143,7 @@ index 391d485..d42c792 100644
  
    void AddBlockLink(uint64_t GuestDestination, FEXCore::Context::ExitFunctionLinkData* HostLink,
 diff --git a/FEXCore/include/FEXCore/Core/Context.h b/FEXCore/include/FEXCore/Core/Context.h
-index 8aa448e..5e54697 100644
+index 8aa448e2e..5e5469736 100644
 --- a/FEXCore/include/FEXCore/Core/Context.h
 +++ b/FEXCore/include/FEXCore/Core/Context.h
 @@ -140,9 +140,15 @@ public:
@@ -165,7 +165,7 @@ index 8aa448e..5e54697 100644
  
    FEX_DEFAULT_VISIBILITY virtual void
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
-index 2d9c27a..21bd969 100644
+index 2d9c27a60..21bd969c3 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 @@ -224,9 +224,16 @@ public:

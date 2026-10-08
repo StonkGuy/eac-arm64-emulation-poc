@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds FEX-Emu 2609.1 with the patches from patches/ applied.
+# Builds FEX-Emu 2610 with the patches from patches/ applied (developed on 2609.1, rebased onto 2610 without changes).
 #
 #   scripts/build-fex.sh            clone (if needed) + patch + configure + build into ./work/FEX/build
 #   JOBS=6 scripts/build-fex.sh     limit parallel jobs (default: nproc)
@@ -11,8 +11,8 @@
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${WORK:-$REPO/work}
-TAG=FEX-2609.1
-BASE=9fbdc00bd6401aff3b32d79e78ff98b8a13e4dcf
+TAG=FEX-2610
+BASE=14c92681f4d62cf84d901460e0358de09c8847a7
 JOBS=${JOBS:-$(nproc)}
 CC=${CC:-clang}; CXX=${CXX:-clang++}
 
@@ -30,8 +30,9 @@ elif [ "$HAVE" -ne "$WANT" ]; then
   echo "$WORK/FEX has $HAVE commits on top of $TAG but patches/ has $WANT: remove $WORK/FEX and run again"; exit 1
 fi
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
-  -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DENABLE_LTO=OFF -DENABLE_ASSERTIONS=OFF -DTUNE_CPU=native
+  -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DENABLE_LTO=OFF -DENABLE_ASSERTIONS=OFF -DTUNE_CPU=native \
+  -DCMAKE_CXX_SCAN_FOR_MODULES=OFF   # 2610's fmt is C++20; without this CMake needs clang-scan-deps
 cmake --build build -j "$JOBS"
 echo
 echo "built: $WORK/FEX/build/Bin/FEX"
-echo "next:  scripts/vm/install-overlay.sh   (installs it as an overlay and registers it with binfmt inside the VM)"
+echo "next:  scripts/vm/install-overlay.sh   (installs it as an overlay; the VM registers it with binfmt when it starts)"

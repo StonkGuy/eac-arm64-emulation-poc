@@ -14,7 +14,7 @@
 //
 // The same source builds for x86-64 (the binary to run under FEX) and for aarch64 (the reference run on the host's own Linux
 // kernel): only the system-call glue differs. Expected: passes on a Linux kernel. On FEX with FEX_SIGNALMASKFIX=0 (the stock
-// behaviour) checks 1, 3 and 4b fail. With the fix (the default since patches/0009) it passes, provided FEX also has patches/0008: without that, a handler that keeps its
+// behaviour) checks 1, 3 and 4b fail. With the fix (the default since patches/0007) it passes, provided FEX also has patches/0008: without that, a handler that keeps its
 // `sig` argument in a register across system calls can lose it (docs/signal-registers.md) and checks 4a, 4b and 6 fail too.
 // Build: tests/signal-mask/build.sh [clang]   (x86-64 binary)   or   tests/signal-mask/build.sh native   (host architecture)
 // Run:   ./signal_mask_test   (exit status = number of failed checks)

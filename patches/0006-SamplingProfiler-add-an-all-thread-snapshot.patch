@@ -1,7 +1,7 @@
-From 7ee73361179fc16458030810df3addae3c4983f6 Mon Sep 17 00:00:00 2001
+From 6cac8a982d3eda96f8d737afea62186de81da2d2 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 10:54:09 +0300
-Subject: [PATCH 6/9] SamplingProfiler: add an all-thread snapshot
+Subject: [PATCH 6/10] SamplingProfiler: add an all-thread snapshot
 
 The PC sampler only signals threads that used CPU, so it cannot show where a blocked or wedged thread is waiting. Creating
 /dev/shm/fex-<pid>-snapshot makes the profiler signal every thread of the process once; each handler stores the thread's x86
@@ -15,7 +15,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  1 file changed, 74 insertions(+)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.cpp
-index 9645e24..5bd0f83 100644
+index 9645e242b..5bd0f830f 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.cpp
 @@ -5,6 +5,7 @@

@@ -1,7 +1,7 @@
-From 9bdbee83753ead4571c910dc596058ed42601bb2 Mon Sep 17 00:00:00 2001
+From ef87b0abbadb4d2f2c8d2f465a62445749fc203d Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 15:09:54 +0300
-Subject: [PATCH 9/9] Signals: never block FEX's own signals in the guest
+Subject: [PATCH 9/10] Signals: never block FEX's own signals in the guest
  sigsuspend set
 
 GuestSigSuspend built the host set straight from the guest mask, so a guest
@@ -15,7 +15,7 @@ handler-entry path already skip these signals; do the same here.
  1 file changed, 7 insertions(+), 5 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 21d5e16..c81baec 100644
+index 21d5e16f9..c81baec2a 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -1365,16 +1365,18 @@ uint64_t SignalDelegator::GuestSigSuspend(FEX::HLE::ThreadStateObject* Thread, u
