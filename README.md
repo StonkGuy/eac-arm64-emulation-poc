@@ -31,17 +31,16 @@ Linux.
 | the launch options and DXVK caps from `scripts/` | `scripts/set-launch-options.sh`, `scripts/dxvk.conf` |
 
 The series is split into **fixes** and **diagnostics** — patches 0001 (`ptrace`), 0002 (SMC hot pages) and 0007 (signal mask) are
-needed to run; 0008/0009 are correctness fixes in the same area, the rest is performance or tooling. [docs/patches.md](docs/patches.md) explains each patch and its reasoning:
+needed to run; 0008 is a correctness fix in the same area, the rest is performance or tooling. [docs/patches.md](docs/patches.md) explains each patch and its reasoning:
 
 | patch | group | purpose |
 |---|---|---|
 | 0001 `ptrace` emulation | fix | the EAC launcher injects its client with `ptrace`; FEX emulates the x86-64 view of a tracee. Without it the launcher fails (`Unexpected error. (#1)`) |
 | 0007 signal mask | fix | guest handlers run with the Linux signal mask. Without it, Photon time-outs in ~every second session |
 | 0008 syscall info | fix | a handler entered from a syscall keeps the registers it sets |
-| 0009 sigsuspend mask | correctness fix | `rt_sigsuspend` no longer host-blocks FEX's own signals; regression-free; VRChat never calls it (traced) |
 | 0004 cheap invalidation | performance | `mmap`/`mprotect` on data pages ~22x cheaper with ~200 threads; without it, 60+ s joins |
 | 0002 SMC hot pages | fix | pages that keep self-modifying-code faulting stop being write-protected. Without it the anti-cheat client never finishes loading and the game does not start |
-| 0003/0005/0006/0010 | **diagnostics** | stats, sampler and thread snapshot (0010 adds the futex word to the snapshot) — tools, not fixes |
+| 0003/0005/0006/0009 | **diagnostics** | stats, sampler and thread snapshot (0009 adds the futex word to the snapshot) — tools, not fixes |
 
 ## What is changed where
 
@@ -49,7 +48,7 @@ Three different kinds of change are involved. Only the first is new code; nothin
 
 | layer | what | kind | where |
 |---|---|---|---|
-| **FEX-Emu (emulator)** | 0001 `ptrace` emulation, 0007 signal mask, 0008 syscall info, 0009 sigsuspend mask, 0004 invalidation, 0002 SMC hot pages, 0003/0005/0006/0010 diagnostics | **new source code**, patches against FEX-2610 | `patches/`, built by `scripts/build-fex.sh` |
+| **FEX-Emu (emulator)** | 0001 `ptrace` emulation, 0007 signal mask, 0008 syscall info, 0004 invalidation, 0002 SMC hot pages, 0003/0005/0006/0009 diagnostics | **new source code**, patches against FEX-2610 | `patches/`, built by `scripts/build-fex.sh` |
 | **Proton / Wine** | `WINE_CPU_TOPOLOGY=16:…` (report 16 CPUs; fixes the pre-join stall) | **stock Proton setting**, no patch | launch options, `scripts/set-launch-options.sh` |
 | | `EAC_LAUNCHERDIR`, `PROTON_EAC_RUNTIME` (load the EAC runtime), `WINEDEBUG=-all`, `PROTON_USE_XALIA=0` | stock Proton settings | launch options |
 | | `DXVK_CONFIG_FILE` → `dxgi.maxDeviceMemory`/`maxSharedMemory` = 3072 | stock DXVK setting | `scripts/dxvk.conf` |

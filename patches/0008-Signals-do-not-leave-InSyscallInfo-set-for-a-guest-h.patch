@@ -1,7 +1,7 @@
 From 39070db535b8239ef2d9a644f68dfc605da9f8d2 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 12:00:27 +0300
-Subject: [PATCH 8/10] Signals: do not leave InSyscallInfo set for a guest
+Subject: [PATCH 8/9] Signals: do not leave InSyscallInfo set for a guest
  handler entered from a syscall handler
 
 HandleDispatcherGuestSignal cleared Frame->InSyscallInfo only when the signal interrupted JIT code. When it interrupted the

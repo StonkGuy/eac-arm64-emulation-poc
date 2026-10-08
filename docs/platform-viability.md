@@ -206,7 +206,7 @@ Two consequences:
   (`VZLinuxRosettaDirectoryShare`; Apple's "Running Intel Binaries in Linux VMs"); no supported or documented mechanism
   drives it from a raw Hypervisor.framework VMM like libkrun, and none has been implemented. So on the only macOS route
   that has both translation *and* hardware 3D, x86-64 translation is done by **the same FEX binary this repository
-  patches**. Our ten patches are therefore the port's prerequisite, not a detail. (Strictly: "no supported path
+  patches**. Our nine patches are therefore the port's prerequisite, not a detail. (Strictly: "no supported path
   exists"; a hypothetical reverse-engineered shim is not ruled out, but nothing supports one.)
 * **D3DMetal and Rosetta belong to a different route.** They are for *native macOS Wine* (Game Porting Toolkit /
   CrossOver), which cannot run the Linux/Proton EAC client and is the route EAC blocks. The workable macOS route is the

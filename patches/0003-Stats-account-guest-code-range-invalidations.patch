@@ -1,7 +1,7 @@
 From 9b517607dd22351d4a8abdc7011ef6e66e5a26c1 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 02:09:04 +0300
-Subject: [PATCH 3/10] Stats: account guest code-range invalidations
+Subject: [PATCH 3/9] Stats: account guest code-range invalidations
 
 Every guest mmap/munmap/mprotect (and ptrace poke) ends in TM.InvalidateGuestCodeRange, which takes the thread-creation
 and code-invalidation locks, walks every thread's lookup cache and drops the call-return shadow stack of each thread

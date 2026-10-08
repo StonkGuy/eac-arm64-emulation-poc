@@ -127,7 +127,7 @@ else:
 WORDS = REC // 8
 n = len(snap) // REC
 print('%d thread records (record %d B)' % (sum(1 for i in range(n) if struct.unpack_from('<Q', snap, i * REC)[0]), REC))
-# Layouts (from patches 0006 and 0010):
+# Layouts (from patches 0006 and 0009):
 #   640 B  (=80 words):  Tid HostPC Rip Spare Gregs[16] Stack[60]
 #   1280 B (=160 words): Tid HostPC Rip FutexWord FutexExpected FutexAddr Gregs[16] Stack[138]
 # Gregs order: rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15

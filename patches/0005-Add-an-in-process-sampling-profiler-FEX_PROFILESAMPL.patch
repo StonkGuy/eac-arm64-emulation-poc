@@ -1,7 +1,7 @@
 From 5a8b8b9ac82ac17c6352352e94b70fb52d6328b8 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 07:25:50 +0300
-Subject: [PATCH 5/10] Add an in-process sampling profiler (FEX_PROFILESAMPLEHZ)
+Subject: [PATCH 5/9] Add an in-process sampling profiler (FEX_PROFILESAMPLEHZ)
 
 Anti-cheat clients detect debuggers and `perf`, so a game under one cannot be profiled from outside. This adds a
 statistical sampler that lives entirely inside the emulator process: a host thread sends SIGPROF to the busy guest threads

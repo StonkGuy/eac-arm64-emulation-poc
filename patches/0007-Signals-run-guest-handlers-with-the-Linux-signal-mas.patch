@@ -1,7 +1,7 @@
 From 7c4a6902214ddedcb4a861002db0938149869677 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 10:54:18 +0300
-Subject: [PATCH 7/10] Signals: run guest handlers with the Linux signal mask;
+Subject: [PATCH 7/9] Signals: run guest handlers with the Linux signal mask;
  optional signal trace
 
 While a guest signal handler runs, Linux blocks (interrupted mask | sa_mask | the signal unless SA_NODEFER) and rt_sigreturn

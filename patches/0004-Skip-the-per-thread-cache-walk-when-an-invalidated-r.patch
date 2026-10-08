@@ -1,7 +1,7 @@
 From 477a4c583c94c71867d0c7bb5cfad53d4eebe983 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 02:13:58 +0300
-Subject: [PATCH 4/10] Skip the per-thread cache walk when an invalidated range
+Subject: [PATCH 4/9] Skip the per-thread cache walk when an invalidated range
  holds no translated code
 
 Every guest mmap/munmap/mprotect invalidates its range, and the invalidation visited every thread: lock the shared

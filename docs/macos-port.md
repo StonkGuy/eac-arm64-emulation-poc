@@ -12,7 +12,7 @@ Hypervisor.framework) and the same FEX + Wine/Proton + DXVK layers. Two concrete
 
 | piece | why it carries over |
 |---|---|
-| `patches/0001–0010` | x86-64 translation on this route is **FEX**, the same binary; nothing in the patches is Asahi- or muvm-specific |
+| `patches/0001–0009` | x86-64 translation on this route is **FEX**, the same binary; nothing in the patches is Asahi- or muvm-specific |
 | `tools/harness/*.py` | plain Python; the method (trace the wake-up, A/B the arms, decode the ring) applies wherever FEX runs |
 
 What is **replaced**: the host graphics path. Asahi uses DRM native context (host GPU driver + guest Mesa, near-native);

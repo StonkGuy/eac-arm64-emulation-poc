@@ -7,12 +7,12 @@ grouped here by what they are for:
 | group | patches | what it is |
 |---|---|---|
 | **A. Faithful `ptrace`** | 0001 | the change that lets the anti-cheat launcher inject its client at all |
-| **B. Signal fidelity** | 0007, 0008, 0009 | guest signal handlers must behave like Linux; **0007** is what fixed the disconnects (0008 and 0009 are correctness fixes in the same area) |
+| **B. Signal fidelity** | 0007, 0008 | guest signal handlers must behave like Linux; **0007** is what fixed the disconnects (0008 is a correctness fix in the same area) |
 | **C. Code-invalidation cost** | 0002, 0004 | 0002: without it the anti-cheat client never finishes loading; 0004: performance with ~200 threads |
-| **D. Diagnostics** | 0003, 0005, 0006, 0010 | **not fixes** — tools that made the bugs visible without ptrace |
+| **D. Diagnostics** | 0003, 0005, 0006, 0009 | **not fixes** — tools that made the bugs visible without ptrace |
 
 Three patches are needed for the series to run as intended: 0001 (to inject at all), 0002 (so the injected client
-finishes loading) and 0007 (to avoid the disconnects). 0008 and 0009 are correctness fixes in the same area, 0004 is
+finishes loading) and 0007 (to avoid the disconnects). 0008 is a correctness fix in the same area, 0004 is
 performance, group D is instrumentation you can drop.
 
 Everything is measured on **one game (VRChat) on one machine (Apple M2, Fedora Asahi Remix)**. Treat the series as a
@@ -41,7 +41,7 @@ also targets native x86-64 Linux as the reference, a run not recorded here). **L
 
 ---
 
-## B. Signal fidelity — patches 0007, 0008, 0009
+## B. Signal fidelity — patches 0007, 0008
 
 This is the group that fixed the *disconnects*. The symptom was a lost wake-up in Wine's server protocol: a thread
 suspended by `SIGUSR1` and a socket reader parked in the 16-byte wait-pipe read would never wake although data had
@@ -82,24 +82,6 @@ nothing, and redispatch from stale frame contents — the register changes the h
 on stock FEX). This is a plain correctness bug, *not* the cause of the disconnects (with 0008 but without 0007 the
 reproducer still wedged 6 of 6). Analysis: [signal-registers.md](signal-registers.md).
 
-### 0009 — never block FEX's own signals in the guest sigsuspend set
-
-**Reasoning.** The same family as 0007. `rt_sigsuspend`/`rt_sigtimedwait` take a mask of signals to *wait through*;
-`GuestSigSuspend` copied the guest's mask straight into the host `sigsuspend()` set without removing the signals FEX
-needs delivered to itself (`SIGSEGV`, `SIGTRAP`, `SIGNAL_FOR_PAUSE`). A guest that suspends with one of those in its
-mask — an uncommon but legal thing to do — makes the host kernel hold that signal pending forever, so FEX never sees its
-own fault/pause signal while blocked there. `GuestSigProcmask` and the handler-entry path already drop these from the
-host mask; this makes the suspend path agree with them. Guest-visible behaviour is unchanged (the guest still thinks it
-blocked them); only the host set is adjusted.
-
-**Verified by:** the whole test set with the change applied — `tests/ptrace-inject` (28 checks), `tests/signal-mask`
-and `tests/signal-regs` all still `RESULT: PASS`, so it is regression-free. **Status: a correctness fix with no observed
-effect on the game.** The pre-join stall is thread-pool starvation with a configuration fix
-([disconnects.md](disconnects.md#the-pre-join-stall-il2cpp-thread-pool-starvation)), not this. A diagnostic build that logged every guest `rt_sigsuspend` into the
-`FEX_SIGNALTRACE` ring recorded **none** in two full sessions (launch, anti-cheat, world, 150 s of play) — the same
-build logged both calls of a test program, so the trace works. VRChat does not reach the code 0009 changes; it stays
-in the series as a correctness fix for other guests.
-
 ---
 
 ## C. Code-invalidation cost — patches 0002, 0004
@@ -136,7 +118,7 @@ other sessions, so the patch's own cost (the per-instruction check on hot pages)
 
 ---
 
-## D. Diagnostics — patches 0003, 0005, 0006, 0010
+## D. Diagnostics — patches 0003, 0005, 0006, 0009
 
 These fix nothing. Easy Anti-Cheat detects `ptrace` and `perf` ("Forbidden system configuration (Debugger detected.)"),
 so the usual tools were off the table; these gave the investigation sight lines, in-process and without a
@@ -149,7 +131,7 @@ debugger. Include them if you want to reproduce the analysis; drop them for a mi
 * **0006 — all-thread snapshot.** `touch /dev/shm/fex-<pid>-snapshot` records every thread's x86 registers and stack
   once, so a *blocked* thread (which the sampler never sees) can be read; `tools/harness/resolve_snap.py` decodes it.
   The thread-state evidence in [disconnects.md](disconnects.md) comes from it.
-* **0010 — futex word in the snapshot.** Extends 0006's record from 80 to 160 words: for a thread blocked in
+* **0009 — futex word in the snapshot.** Extends 0006's record from 80 to 160 words: for a thread blocked in
   `futex`/`futex_waitv` it also stores the futex word, the value the wait started with, and the address. That is what
   separates *nobody woke it* (the word still equals the expected value) from *the wake-up was lost* (the word changed
   but the thread still sleeps). `resolve_snap.py` accepts both record sizes.

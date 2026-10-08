@@ -1,7 +1,7 @@
 From cb5019409ab901f5f1ec9d93f2000bd7a9a088d8 Mon Sep 17 00:00:00 2001
-From: build <build@invalid>
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 17:04:36 +0300
-Subject: [PATCH 10/10] SamplingProfiler: record the futex word in all-thread
+Subject: [PATCH 9/9] SamplingProfiler: record the futex word in all-thread
  snapshots
 
 The snapshot record grows to 160 words: the Spare slot becomes the
