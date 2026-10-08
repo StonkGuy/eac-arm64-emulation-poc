@@ -4,7 +4,7 @@
 #include <sys/prctl.h>
 #ifndef PR_SET_MEM_MODEL
 #define PR_SET_MEM_MODEL 0x4d4d444c
-#define PR_GET_MEM_MODEL 0x4d4d444d
+#define PR_GET_MEM_MODEL 0x6d4d444c
 #define PR_SET_MEM_MODEL_DEFAULT 0
 #define PR_SET_MEM_MODEL_TSO 1
 #endif
