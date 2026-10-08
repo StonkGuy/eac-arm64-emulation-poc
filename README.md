@@ -47,7 +47,7 @@ needed to run; 0008 is a correctness fix in the same area, the rest is performan
 | 0004 cheap invalidation | performance | `mmap`/`mprotect` on data pages ~22x cheaper with ~200 threads; without it, 60+ s joins |
 | 0002 SMC hot pages | fix | pages that keep self-modifying-code faulting stop being write-protected. Without it the anti-cheat client never finishes loading and the game does not start |
 | 0003/0005/0006/0009 | **diagnostics** | stats, sampler and thread snapshot (0009 adds the futex word to the snapshot) — tools, not fixes |
-| 0011–0021 kernel fidelity | fidelity | the answers a real kernel gives on `arch_prctl` (0011), the debug registers (0012), `/proc/<pid>/status` (0013), unknown regsets (0014), `restart_syscall` (0015) and the signal frame (0016–0020), plus RSP after a faulting `pop` (0021). Not on VRChat's path; a title or Wine observes them |
+| 0011–0020 kernel fidelity | fidelity | the answers a real kernel gives on `arch_prctl` (0011), the debug registers (0012), `/proc/<pid>/status` (0013), unknown regsets (0014), `restart_syscall` (0015) and the signal frame (0016–0020). Not on VRChat's path; a title or Wine observes them |
 
 ## What is changed where
 
@@ -55,7 +55,7 @@ Three different kinds of change are involved. Only the first is new code; nothin
 
 | layer | what | kind | where |
 |---|---|---|---|
-| **FEX-Emu (emulator)** | 0001 `ptrace` emulation, 0007/0008/0010 signal and seccomp fidelity, 0004 invalidation, 0002 SMC hot pages, 0011–0021 kernel-fidelity gaps (debug registers, `/proc`, `arch_prctl`, regsets, `restart_syscall`, signal frame, faulting `pop`), 0003/0005/0006/0009 diagnostics | **new source code**, patches against FEX-2610 | `patches/`, built by `scripts/build-fex.sh` |
+| **FEX-Emu (emulator)** | 0001 `ptrace` emulation, 0007/0008/0010 signal and seccomp fidelity, 0004 invalidation, 0002 SMC hot pages, 0011–0020 kernel-fidelity gaps (debug registers, `/proc`, `arch_prctl`, regsets, `restart_syscall`, signal frame), 0003/0005/0006/0009 diagnostics | **new source code**, patches against FEX-2610 | `patches/`, built by `scripts/build-fex.sh` |
 | **Proton / Wine** | `WINE_CPU_TOPOLOGY=16:…` (report 16 CPUs; fixes the pre-join stall) | **stock Proton setting**, no patch | launch options, `scripts/set-launch-options.sh` |
 | | `EAC_LAUNCHERDIR`, `PROTON_EAC_RUNTIME` (load the EAC runtime), `WINEDEBUG=-all`, `PROTON_USE_XALIA=0` | stock Proton settings | launch options |
 | | `DXVK_CONFIG_FILE` → `dxgi.maxDeviceMemory`/`maxSharedMemory` = 3072 | stock DXVK setting | `scripts/dxvk.conf` |

@@ -1,7 +1,7 @@
 # The patch series
 
 Twenty-one patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
-(`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0021 were written against 2610. They are not all the same kind of thing, so they are
+(`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610. They are not all the same kind of thing, so they are
 grouped here by what they are for:
 
 | group | patches | what it is |
@@ -11,7 +11,7 @@ grouped here by what they are for:
 | **C. Code-invalidation cost** | 0002, 0004 | 0002: without it the anti-cheat client never finishes loading; 0004: performance with ~200 threads |
 | **D. Diagnostics** | 0003, 0005, 0006, 0009 | **not fixes** — tools that made the bugs visible without ptrace |
 | **E. Kernel-fidelity gaps** | 0011, 0012, 0013, 0014, 0015 | the answers a real kernel gives for `arch_prctl`, the debug registers, `/proc/<pid>/status`, unknown regsets and `restart_syscall` |
-| **F. Signal frames and faults** | 0016–0021 | what Windows exception handling under Wine reads from and writes to a signal frame, and RSP after a faulting `pop` |
+| **F. Signal frames and faults** | 0016–0020 | what Windows exception handling under Wine reads from and writes to a signal frame |
 
 Patches 0001–0010 are needed for the game (0001 to inject at all, 0002 so the injected client finishes loading, 0007 to
 avoid the disconnects, 0010 for the seccomp/SIGSYS path; 0008 is a correctness fix in the same area and 0004 is
@@ -214,13 +214,13 @@ limits, all off VRChat's path:
 
 ---
 
-## F. Signal frames and faults — patches 0016–0021
+## F. Signal frames and faults — patches 0016–0020
 
 Wine runs Windows exception handling on top of Linux signals: a fault becomes a `SIGSEGV`/`SIGILL`/`SIGTRAP`, Wine's
 handler turns the `ucontext` into a Windows `CONTEXT`, runs the SEH chain, and writes the result back into the
 `ucontext` before `rt_sigreturn`. Debuggers and Wine's `SetThreadContext` on a suspended thread work the same way. So
 every field of the frame that FEX gets wrong, and every edit that `rt_sigreturn` drops, is visible to Windows code.
-These patches close the gaps that Wine's own `ntdll:exception` test and a real-kernel comparison exposed. All six are
+These patches close the gaps that Wine's own `ntdll:exception` test and a real-kernel comparison exposed. All five are
 **our patch code**; none adds an option.
 
 | patch | what Linux does | what FEX did | test |
@@ -230,11 +230,9 @@ These patches close the gaps that Wine's own `ntdll:exception` test and a real-k
 | 0018 | `FP_XSTATE_MAGIC1` in `sw_reserved`, `xstate_size` = the state's size, `FP_XSTATE_MAGIC2` right after it (`fpu/signal.c`) — how a handler (Wine's among them) finds the AVX state | wrote the magic only with AVX enabled and a size that pointed past the trailer | `tests/signal-frame` |
 | 0019 | when the frame cannot be written at the interrupted RSP, the thread dies from `SIGSEGV` (`force_sigsegv`) | wrote the frame without checking the guest mapping; if RSP pointed at host memory FEX corrupted itself inside its own signal handler | `tests/signal-frame` (guard, see below) |
 | 0020 | the frame's `uc_sigmask` holds the interrupted mask, and `rt_sigreturn` installs whatever the handler left there | never wrote the field (handlers read stack garbage) and ignored a handler's rewrite | `tests/signal-frame` |
-| 0021 | a faulting instruction leaves RSP unchanged | `pop r/m` committed the RSP increment before the store that faults, so the frame carried RSP + 8 and a handler resuming past the instruction (`ntdll:exception`'s `popq (%rax)` case) re-faulted forever | `tests/pop-fault` |
 
 **Cost.** Nothing on the common path: 0016, 0017, 0018 and 0020 change what is written to or read from a signal frame;
-0019 adds one lookup in the guest mapping table per signal delivered; 0021 changes only `pop` with a memory
-destination (a register destination keeps the fused single load).
+0019 adds one lookup in the guest mapping table per signal delivered.
 
 **Verified by.** Each test passes natively on x86-64 and under the patched FEX and fails without its patch (measured by
 building the series one patch at a time). `ntdll:exception` under Proton went from dying before its first check to 8
@@ -244,6 +242,14 @@ the outcome of the checked path (a stack it cannot write) against the native ker
 execute breakpoints (DR0–DR3 with DR7) are stored (0012) but never fire; making them fire needs a breakpoint check
 inside the JIT, and nothing on this project's path needs it. The remaining `ntdll:exception` failures are in that
 area plus segment selectors other than CS/SS and x87/SSE precision corners.
+
+**A sixth patch in this group, `0021` (`pop r/m` leaves RSP unchanged on fault), was written and then withdrawn.**
+It passes `tests/pop-fault` but the rewrite of the JIT `pop r/m` memory-destination path broke the normal
+(non-faulting) execution EAC's launcher relies on: with it installed, VRChat's EAC launcher hangs at `Starting Wine
+module mapping` and never reaches `Launcher finished with: 301` (bisected live — 0001–0020 reach 301, 0001–0021 do
+not, on the same VM). The only consumer of its behaviour is a synthetic test; the real consumer it broke is the
+game. `tests/pop-fault` is kept in the tree as a known-fail recording the withdrawn behaviour, and the series ships
+without 0021.
 
 ---
 
