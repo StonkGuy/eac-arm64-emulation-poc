@@ -46,7 +46,7 @@ In Steam:
 ## 3. Build the patched FEX
 
 ```sh
-scripts/build-fex.sh            # clones FEX at FEX-2610 (14c9268), applies patches/0001-0009 (0001, 0002, 0007 are required), builds Release
+scripts/build-fex.sh            # clones FEX at FEX-2610 (14c9268), applies every patch in patches/ (0001, 0002, 0007 are required), builds Release
 scripts/vm/install-overlay.sh   # copies the binary to ~/.local/share/vrchat-fex-eac/fex/FEX
 ```
 
@@ -165,7 +165,7 @@ Photon region found in 3 s and the world joined, then a 150 s in-world capture.
 | host | MacBook Air M2 16 GB, Fedora Asahi Remix 44, kernel `7.1.13-402.asahi.fc44.aarch64+16k` |
 | VM | `muvm-0.6.0-3.fc44`, `libkrun-1.19.0-1.fc44`, `libkrunfw-5.5.0-1.fc44`, `passt-0^20260728.gf8df3f1-2.fc44` |
 | GPU driver (guest) | `mesa-vulkan-drivers-26.1.8-1.fc44` |
-| FEX | FEX-2610 (`14c9268`) + `patches/0001`–`0009`, Release build, binary used only as the in-VM binfmt interpreter |
+| FEX | FEX-2610 (`14c9268`) + `patches/` (0001–0021; the Asahi run used 0001–0009), Release build, binary used only as the in-VM binfmt interpreter |
 | Proton | Proton Experimental `experimental-11.0-20261001` + Proton EasyAntiCheat Runtime |
 | Steam runtime | SteamLinuxRuntime_4 `4.0.20260805.254769` |
 | VRChat | Steam build id `25738324` |

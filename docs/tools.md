@@ -53,5 +53,66 @@ on an aarch64 machine that has a clang with the x86-64 target but no x86-64 link
 | `tests/ptrace-inject/build.sh [clang]` + `run-in-vm.sh` | The faithful-`ptrace` check (28 checks). `run-in-vm.sh` boots a throw-away VM with the patched FEX registered for x86-64; `run.sh` runs the binary with a 60 s timeout where x86-64 binaries already execute (e.g. inside an already-running VM: `muvm -- tests/ptrace-inject/run.sh`). Must print `RESULT: PASS`; under stock FEX it hangs after `PASS: fork`. |
 | `tests/signal-mask/build.sh [clang]` | Checks the Linux signal-mask rule around handlers (patches 0007/0008). Run it in the VM too. |
 | `tests/signal-regs/build.sh [clang]` | Checks that a handler's register changes survive across a syscall (patch 0008). |
+| `tests/seccomp-trap/build.sh [clang]` | Reproduces the seccomp/SIGSYS path Wine's ntdll installs on x86_64 (`install_bpf`/`sigsys_handler`): a `SECCOMP_RET_TRAP` filter that traps raw `syscall`s from a chosen code range, then checks the SIGSYS fields (`si_code`/`si_syscall`/`si_arch`/`si_call_addr`), that the handler can read the number and all six arguments from the ucontext, and that a value written into its RAX resumes the caller, over 1000 repetitions. Fails early with the errno if the filter install is rejected (EINVAL under FEX). Also `build.sh native` for the reference run on a real Linux kernel. Run it in the VM too. |
+| `tests/cpuid-fault/build.sh [clang]` | Checks `arch_prctl(ARCH_SET_CPUID/ARCH_GET_CPUID)` (patch 0011): `SET_CPUID(0)` → 0, a later CPUID faults as SIGSEGV/SI_KERNEL at the CPUID instruction, `SET_CPUID(1)` restores it. On a real kernel or an unpatched FEX the faulting checks report SKIP (`-ENODEV`). Re-execs itself with `FEX_ENABLECPUIDFAULTING=1`, the **patch-0011** option. Also `build.sh native`. |
+| `tests/proc-status/build.sh [clang]` | Checks the two debugger-facing lines of `/proc/self/status` (patch 0013): `Seccomp:` reflects the guest's own filter (2 after a filter is installed) and `TracerPid:` is 0 for an untraced process; all other lines stay the host file's. Re-execs itself with `FEX_NEEDSSECCOMP=1`, the stock option under which FEX emulates the guest's filters (the setting Wine's seccomp path needs); without it the host process carries the filter and an unpatched FEX happens to pass. Also `build.sh native`. |
+| `tests/ptrace-dregs/build.sh [clang]` | Checks the hardware debug registers through `PTRACE_PEEKUSER`/`POKEUSER` (patch 0012): DR0–DR3 validate a canonical address (`-EINVAL` otherwise), DR4/DR5 are `-EIO`, DR7 is validated and stored raw, a slot-unaligned or past-`struct user` offset is `-EIO`. The patch and this test were rewritten to the kernel's layout; the test passes natively and under FEX. |
+| `tests/ptrace-regsets/build.sh [clang]` | Checks `PTRACE_GETREGSET`/`SETREGSET` type handling (patch 0014): `NT_PRSTATUS` and `NT_X86_XSTATE` succeed, an unknown type returns `-EINVAL` (never `-EPERM`). Also `build.sh native`. |
+| `tests/restart-syscall/build.sh [clang]` | Checks that `restart_syscall` returns `-EINTR` and the process survives (patch 0015); on an unpatched FEX the process dies and no RESULT line prints. Also `build.sh native`. |
+| `tests/signal-frame/build.sh [clang]` | Checks the guest signal frame against what Linux writes (patches 0016–0020): single-step via TF and a handler clearing it, the frame's CS/SS (`0x33`/`0x2b`), the XSAVE fpstate (`FP_XSTATE_MAGIC1` in `sw_reserved`, `FP_XSTATE_MAGIC2` at `fpstate + xstate_size`), `ud2` → `ILL_ILLOPN`, `uc_sigmask` on delivery and after a handler rewrite, and a signal on a stack that cannot hold the frame (must die from SIGSEGV). Also `build.sh native`. |
+| `tests/sigreturn-eflags/build.sh [clang]` | Checks that `rt_sigreturn` applies EFLAGS a handler wrote while leaving RIP alone (patch 0016): a handler that sets DF resumes with DF set, one that sets TF starts single-stepping with exactly one SIGTRAP (how a debugger or Wine's `SetThreadContext` starts stepping). x86-64 only; run the same binary natively for the reference. |
+| `tests/pop-fault/build.sh [clang]` | Checks that a faulting `pop` to memory leaves RSP unchanged (patch 0021): `popq (%rax)` into an unwritable page, differential against `mov %eax,(%rax)`, with the handler resuming past the instruction the way `ntdll:exception` does. x86-64 only. |
+| `tests/seccomp-trap-noexec/build.sh [clang]` | Checks that a syscall a `SECCOMP_RET_TRAP` filter traps is never executed: a trapped `uname()` must leave its buffer untouched, an untrapped one fills it; 50 consecutive trapped calls stay suppressed. Run with `FEX_NEEDSSECCOMP=1`. Also `build.sh native`. |
+| `tests/signal-race/build.sh [clang]` | Two threads: one loops a trapped raw syscall (every call is a SIGSYS), the other hammers it with SIGUSR1 — the shape of Wine's `NtGetContextThread` against a thread in raw NT syscalls. Fails if the worker cannot be stopped afterwards (the hang signature). Run with `FEX_NEEDSSECCOMP=1`. Also `build.sh native`. |
 | `tests/bench/build.sh [clang] [output]` | Freestanding x86-64 micro-benchmarks: the code-churn invalidation cost (`EXTRA="-DINVAL_MODE=1 -DINVAL_THREADS=190"`, patch 0004) and the self-modifying-code fault modes (patch 0002). Generates its bytecode table with `gen_bigcode.py`. |
-| `tests/bench/tso_probe.c` | A tiny probe for the `prctl(PR_GET/SET_MEM_MODEL)` interface FEX uses for TSO; prints what the kernel/FEX report. Unlike the other tests it is an ordinary aarch64 program: `gcc -O2 -o tso_probe tests/bench/tso_probe.c`, then run it on the host and inside the VM.
+| `tests/bench/tso_probe.c` | A tiny probe for the `prctl(PR_GET/SET_MEM_MODEL)` interface FEX uses for TSO; prints what the kernel/FEX report. Unlike the other tests it is an ordinary aarch64 program: `gcc -O2 -o tso_probe tests/bench/tso_probe.c`, then run it on the host and inside the VM. |
+
+## Native reference — expected values from a real kernel
+
+An emulator is only wrong relative to something. Every test above is written to run on **bare-metal x86-64 Linux** as
+well, so the expected values come from a real kernel rather than from FEX's own current behaviour.
+
+```
+tests/<name>/build.sh native        # builds for the host's own architecture with the system compiler
+./<name>_test                       # in the test's directory; exit status = number of failed checks, 0 = PASS
+```
+
+A test that cannot be satisfied on real hardware is the test's bug, not FEX's, and is reported as such. The native run
+sets the expected values for the behaviour a patch implements; it does not mean every difference from a real kernel is
+a defect to fix (see the scope note in [patches.md](patches.md)). The reference
+runs recorded here used an **AMD Ryzen 9 7940HS (Zen 4)**, Fedora 44, Linux 6.19, gcc 16.2.1/clang 22.1.8, in
+`~/fex-ref/` on that box only (no sudo, no system packages, no Steam or games). That CPU has `cpuid_fault`, which is
+what makes the native `cpuid-fault` reference pass at all; a host without it would report `-ENODEV` and SKIP.
+
+| test | native x86-64 | stock FEX-2610 | patched FEX-2610 |
+|---|---|---|---|
+| `ptrace-inject` | PASS | hang (timeout) | PASS |
+| `signal-mask` | PASS | FAIL | PASS |
+| `signal-regs` | PASS | FAIL | PASS |
+| `seccomp-trap` (`FEX_NEEDSSECCOMP=1`) | PASS | SIGSEGV | PASS |
+| `seccomp-trap-noexec` (`FEX_NEEDSSECCOMP=1`) | PASS | SIGSEGV | PASS |
+| `signal-race` (`FEX_NEEDSSECCOMP=1`) | PASS | FAIL | PASS |
+| `cpuid-fault` | PASS | FAIL | PASS |
+| `proc-status` | PASS | FAIL | PASS |
+| `ptrace-regsets` | PASS | FAIL | PASS |
+| `ptrace-dregs` | PASS | FAIL | PASS |
+| `restart-syscall` | PASS | SIGILL | PASS |
+| `signal-frame` | PASS | FAIL | PASS |
+| `sigreturn-eflags` | PASS | FAIL | PASS |
+| `pop-fault` | PASS | FAIL | PASS |
+
+The three columns ran the **same binaries** (built once, copied to the x86-64 box). Every test fails without the patch
+it names: the series was also built one patch at a time and each test flips from FAIL to PASS at its own patch.
+
+All tests build with the x86-64-target clang on any host; most also build natively (`build.sh native`), while
+`sigreturn-eflags` and `pop-fault` check x86 behaviour and are run natively as the same x86-64 binary. Two further notes for anyone extending the comparison:
+
+* Wine's own conformance tests (`winetest64`, the daily build from WineHQ's job artifacts; the old
+  `test.winehq.org/builds/` URL is gone) run natively under Xvfb and through FEX the same way, and several FEX-only
+  divergences show up only against the native run (`ntdll:exception` aborted on FEX before patch 0021 but completes
+  natively; `kernel32:process` hangs intermittently under FEX, stock and patched alike, at a rate that tracks guest
+  load). Run them the same way on both, and judge an intermittent test by its rate over many runs, never by one run.
+* A native result can also **correct** a FEX report: the `tf`/single-step trap storm, the signal-frame CS/SS values
+  (`0x33`/`0x2b` native vs `0x30`/`0x00` under FEX) and the zero back-to-back RDTSC delta are confirmed by hardware,
+  an apparent `kernel32:process` regression turned out to be the test's own flakiness (same hang rate on stock FEX), while several claims that FEX was "wrong" about `int3`/`ud2` `si_code`
+  turned out to be the reports' own expectations and FEX matches the kernel.

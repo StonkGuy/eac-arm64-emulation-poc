@@ -1,7 +1,9 @@
 # Status
 
 Last updated 2026-10-08. VRChat on Apple M2 / Asahi, patched FEX 2610 (developed on 2609.1). This is a one-game, one-machine proof of
-concept — read "works" and "open" accordingly.
+concept — read "works" and "open" accordingly. The Works/Known limits below are the Asahi measurements; the macOS result
+(M2 MacBook Air, macOS 27, steamac libkrun guest: EAC `301`, Session Begin, world entry in three sessions, GPU-bound at
+~26-30 fps) is in [macos-port.md](macos-port.md).
 
 ## Works
 * EAC launcher completes (`Launcher finished with: 301 …`), `AntiCheat Session Begin: Success`, login, world join,

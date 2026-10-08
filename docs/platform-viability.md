@@ -9,7 +9,7 @@ It is a feasibility note, not a plan.
 
 ## How to read this page
 
-Nothing here was measured on macOS. Every claim below is one of four kinds, and the load-bearing ones are tabulated so
+The macOS result is now measured and reported in [macos-port.md](macos-port.md); this page is the background analysis that preceded it, and the tables below keep their original claim kinds except where marked. Every claim below is one of four kinds, and the load-bearing ones are tabulated so
 you can check them rather than take our word:
 
 * **measured here** — reproduced on this machine (Apple M2, Fedora Asahi Remix); the command or test is named.
@@ -23,7 +23,7 @@ you can check them rather than take our word:
 |---|---|---|
 | `muvm` is a libkrun front-end | cited | muvm README |
 | libkrun runs on Linux/KVM **and** macOS/Hypervisor.framework | cited | libkrun README |
-| the `steamac` stack (libkrun + Venus + FEX + Proton 11 ARM64) runs on a Mac | cited, **self-attested** | its own repo/README |
+| the `steamac` stack (libkrun + Venus + FEX + Proton 11 ARM64) runs on a Mac | cited; **reproduced here** (M2, macOS 27) | its own repo/README; [macos-port.md](macos-port.md) |
 | a libkrun guest is 4 KB-page | cited | `libkrunfw` `config-libkrunfw_aarch64` (`CONFIG_ARM64_4K_PAGES=y`) |
 | Rosetta-for-Linux needs Apple's `Virtualization.framework` (so not libkrun) | cited | Apple docs; Podman/libkrun issues |
 | Rosetta cannot `ptrace` translated binaries | cited | seclab-bonn write-up (link below) |
@@ -32,12 +32,11 @@ you can check them rather than take our word:
 | Epic lists the Anti-Cheat *Client Interface* as unsupported on **Linux ARM64** | cited | Epic EOS Anti-Cheat docs (link below) |
 | upstream FEX cannot run EAC out of the box | cited | FEX issue #4348 (open) |
 | the gap is `ptrace` fidelity — the EAC launcher injects its client with `ptrace` | inferred | no upstream source states this; it is this repository's finding (`patches/0001`, [how-it-works.md](how-it-works.md)) |
-| a macOS-libkrun guest **can** run the patched FEX (4 KB pages by construction) | inferred | the `libkrunfw` config above |
+| a macOS-libkrun guest **can** run the patched FEX (4 KB pages by construction) | **measured** (`getconf PAGESIZE` = 4096; tests pass) | [macos-port.md](macos-port.md) |
 | "~35–50 FPS" for VRChat through this stack | inferred (extrapolated) | §*Performance expectation* below |
-| whether EAC's Linux client **accepts a macOS-libkrun guest** | **unverified — the open question** | the experiment in [macos-port.md](macos-port.md) |
+| whether EAC's Linux client **accepts a macOS-libkrun guest** | **measured: yes** (`301`, Session Begin, world entry; three sessions, one Mac) | [macos-port.md](macos-port.md) |
 
-The last row is the whole point: everything else is cited, inferred, or mechanical, and it is the one thing nobody has
-tried.
+The last row was the whole point; it has now been tried on one Mac and EAC accepted the guest.
 
 ## The stack on both sides is the same shape
 
@@ -148,8 +147,8 @@ estimate, not a prediction:
   Rosetta, FEX gets hardware TSO only if the guest kernel can switch the CPU into TSO mode (`prctl(PR_SET_MEM_MODEL)`,
   Asahi's kernel series). On Asahi this works on the host and inside the muvm guest (measured with
   `tests/bench/tso_probe.c`, so FEX pays nothing for it there). On macOS, libkrunfw's guest kernel carries the same
-  series, but libkrun itself never sets the TSO bit, so it works only if Hypervisor.framework lets the guest set it — not
-  verified by anyone. If it does not, FEX falls back to software TSO, the single largest emulation cost.
+  series, and it works: in the Hypervisor.framework guest `prctl(PR_SET_MEM_MODEL, TSO)` succeeds and FEX reports hardware
+  TSO ([macos-port.md](macos-port.md)). Without it FEX would fall back to software TSO, the single largest emulation cost.
 * **GPU layer:** no quantified MoltenVK-vs-native-Metal or D3DMetal-vs-DXVK FPS figures exist publicly; treat graphics
   overhead as unmeasured.
 * **Thermals:** a fanless MacBook Air M2 sustains ~10–25% below peak under 20–30-minute loads, so a session settles
@@ -206,7 +205,7 @@ Two consequences:
   (`VZLinuxRosettaDirectoryShare`; Apple's "Running Intel Binaries in Linux VMs"); no supported or documented mechanism
   drives it from a raw Hypervisor.framework VMM like libkrun, and none has been implemented. So on the only macOS route
   that has both translation *and* hardware 3D, x86-64 translation is done by **the same FEX binary this repository
-  patches**. Our nine patches are therefore the port's prerequisite, not a detail. (Strictly: "no supported path
+  patches**. Our patches are therefore the port's prerequisite, not a detail. (Strictly: "no supported path
   exists"; a hypothetical reverse-engineered shim is not ruled out, but nothing supports one.)
 * **D3DMetal and Rosetta belong to a different route.** They are for *native macOS Wine* (Game Porting Toolkit /
   CrossOver), which cannot run the Linux/Proton EAC client and is the route EAC blocks. The workable macOS route is the
@@ -238,8 +237,7 @@ Linux/Proton runtime — there is **no aarch64 build** of it (Steam appid 182633
 x86-64 only; Epic's ARM EAC client is Windows-on-Arm only), so it is an x86-64 ELF — run under the guest's FEX? (b) does EAC's VM checks flag a Hypervisor.framework
 guest (CPUID hypervisor bit, virtio devices, `systemd-detect-virt`)? (c) is EAC's runtime present in the ARM64 SteamOS
 image at all? This repository already runs EAC inside a micro-VM (muvm/libkrun), so "it is a VM" is not by itself fatal —
-but that was an Asahi host, and whether EAC tolerates a *macOS* libkrun guest the same way is untested. It is the single
-real unknown, and it is a question about EAC's detection, not about the stack.
+and EAC also accepts a *macOS* libkrun guest (measured on one M2 Mac; see [macos-port.md](macos-port.md)).
 
 ## Splitting the anti-cheat from the game: why it does not work
 
@@ -295,7 +293,7 @@ take it.
 
 | | Feasible now? |
 |---|---|
-| macOS host, Linux arm64 guest in **libkrun**, FEX + Wine/Proton + Venus | **closest** — prerequisites exist (`steamac`); the unknown is whether EAC's Linux client accepts a macOS-libkrun guest |
+| macOS host, Linux arm64 guest in **libkrun**, FEX + Wine/Proton + Venus | **works (one Mac, one game)** — EAC's Linux client accepts the macOS-libkrun guest; see [macos-port.md](macos-port.md) |
 | macOS host, Linux arm64 guest in UTM (QEMU backend), FEX + Venus | **partially** — plausible, beta GPU stack, same EAC unknown |
 | macOS host, Linux arm64 guest with Rosetta + 3D (UTM Apple backend) | **no** — UTM backend split (#7921); and Rosetta cannot work with libkrun at all |
 | macOS host, native Wine (GPTK/CrossOver) with D3DMetal | **no** — cannot run the Linux/Proton EAC client |
@@ -304,8 +302,8 @@ take it.
 
 ## What would change the answer
 
-* **Someone tries the libkrun route and reports whether EAC's Linux client runs in a macOS-libkrun guest.** This is now
-  the decisive, and only remaining, question for a macOS port — everything else is demonstrated or mechanical.
+* **Reproduction on other Macs or other EAC games.** The libkrun route has been shown to work on one M2 MacBook Air with
+  VRChat ([macos-port.md](macos-port.md)); other hardware and titles are untested.
 * **UTM gains virtio-gpu 3D on the Apple Virtualization backend** (#7921), which would make the UTM-backed variant
   first-class — though it still cannot use Rosetta with libkrun.
 * **A native macOS build of VRChat with native EAC** (Epic supports native macOS builds of games; VRChat has none). That

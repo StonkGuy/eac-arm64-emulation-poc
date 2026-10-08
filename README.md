@@ -10,10 +10,16 @@ problems.
 
 ![VRChat running on an Apple M2 under Fedora Asahi Remix through the patched FEX-Emu, beside a `fastfetch` of the host](docs/img/vrchat-m2.png)
 
-It is deliberately **one game on one machine** (VRChat on an Apple M2 under Fedora Asahi Remix, inside a [muvm](https://github.com/AsahiLinux/muvm)
-micro-VM). Treat it as a starting point. **Fork it and take it further** — another game, another SoC, another
+It is deliberately **one game on one SoC** (VRChat on an Apple M2: developed under Fedora Asahi Remix inside a [muvm](https://github.com/AsahiLinux/muvm)
+micro-VM, and also verified on macOS, see below). Treat it as a starting point. **Fork it and take it further** — another game, another SoC, another
 host. Nothing here is submitted to, or a proposal for, the FEX or Proton projects;
 see [Not a contribution](#not-a-contribution).
+
+**macOS.** The same patched FEX also runs VRChat with genuine EAC on an Apple M2 MacBook Air under macOS 27, inside
+the [steamac](https://github.com/fxgl/steamac) libkrun guest (Valve's ARM64 SteamOS, Steam's own FEX compatibility tool
+swapped for the patched build). Result, timings and limits: [docs/macos-port.md](docs/macos-port.md). Setup and
+the downstream fixes live in a separate fork, [StonkGuy/steamac](https://github.com/StonkGuy/steamac) (branch
+`fex-eac`).
 
 What made it hard was not CPU speed but **fidelity**. The anti-cheat launcher injects its client into the game with
 `ptrace`, and the emulator has to behave like a real Linux kernel for `ptrace`, signals and `/proc` in ways nothing else
@@ -25,7 +31,7 @@ Linux.
 | you need | why |
 |---|---|
 | **FEX-Emu 2610 with the patches in `patches/`** | see [docs/patches.md](docs/patches.md); build with `scripts/build-fex.sh` |
-| **an arm64 Linux host** (tested: Apple M2, Fedora Asahi Remix, muvm) | a host with 16 KB pages needs a guest with 4 KB pages, hence the muvm VM; on a 4 KB-page host FEX runs directly (untested) |
+| **an arm64 Linux host** (tested: Apple M2 with Fedora Asahi Remix + muvm, or macOS 27 with a steamac libkrun guest) | a host with 16 KB pages needs a guest with 4 KB pages, hence the muvm VM; on a 4 KB-page host FEX runs directly (untested) |
 | **Proton Experimental 11.0** and the *Proton EasyAntiCheat Runtime*, Steam on the same side of the VM boundary as FEX | the versions everything here was measured with |
 | host memory tuning (`scripts/host-tune.sh`, Asahi, 16 GB) | with 16 GB the host runs out of memory around an 8 GB VM plus the GPU buffers; zswap/zram/watermark settings keep the OOM killer away |
 | the launch options and DXVK caps from `scripts/` | `scripts/set-launch-options.sh`, `scripts/dxvk.conf` |
@@ -41,6 +47,7 @@ needed to run; 0008 is a correctness fix in the same area, the rest is performan
 | 0004 cheap invalidation | performance | `mmap`/`mprotect` on data pages ~22x cheaper with ~200 threads; without it, 60+ s joins |
 | 0002 SMC hot pages | fix | pages that keep self-modifying-code faulting stop being write-protected. Without it the anti-cheat client never finishes loading and the game does not start |
 | 0003/0005/0006/0009 | **diagnostics** | stats, sampler and thread snapshot (0009 adds the futex word to the snapshot) — tools, not fixes |
+| 0011–0021 kernel fidelity | fidelity | the answers a real kernel gives on `arch_prctl` (0011), the debug registers (0012), `/proc/<pid>/status` (0013), unknown regsets (0014), `restart_syscall` (0015) and the signal frame (0016–0020), plus RSP after a faulting `pop` (0021). Not on VRChat's path; a title or Wine observes them |
 
 ## What is changed where
 
@@ -48,7 +55,7 @@ Three different kinds of change are involved. Only the first is new code; nothin
 
 | layer | what | kind | where |
 |---|---|---|---|
-| **FEX-Emu (emulator)** | 0001 `ptrace` emulation, 0007 signal mask, 0008 syscall info, 0004 invalidation, 0002 SMC hot pages, 0003/0005/0006/0009 diagnostics | **new source code**, patches against FEX-2610 | `patches/`, built by `scripts/build-fex.sh` |
+| **FEX-Emu (emulator)** | 0001 `ptrace` emulation, 0007/0008/0010 signal and seccomp fidelity, 0004 invalidation, 0002 SMC hot pages, 0011–0021 kernel-fidelity gaps (debug registers, `/proc`, `arch_prctl`, regsets, `restart_syscall`, signal frame, faulting `pop`), 0003/0005/0006/0009 diagnostics | **new source code**, patches against FEX-2610 | `patches/`, built by `scripts/build-fex.sh` |
 | **Proton / Wine** | `WINE_CPU_TOPOLOGY=16:…` (report 16 CPUs; fixes the pre-join stall) | **stock Proton setting**, no patch | launch options, `scripts/set-launch-options.sh` |
 | | `EAC_LAUNCHERDIR`, `PROTON_EAC_RUNTIME` (load the EAC runtime), `WINEDEBUG=-all`, `PROTON_USE_XALIA=0` | stock Proton settings | launch options |
 | | `DXVK_CONFIG_FILE` → `dxgi.maxDeviceMemory`/`maxSharedMemory` = 3072 | stock DXVK setting | `scripts/dxvk.conf` |
@@ -118,7 +125,7 @@ is for someone to do from a fork, with their own testing and reasoning.
 
 The Proton EAC runtime is the same launcher/client machinery for every game that ships Linux EAC, so the `ptrace` work
 is not VRChat-specific; each game still has its own EAC build, integrity checks and server-side policy. Only VRChat has
-been tried. Other FEX hosts (for instance Valve's Steam Frame) are untested — see [docs/other-platforms.md](docs/other-platforms.md).
+been tried. Besides Asahi and the macOS guest above, other FEX hosts (for instance Valve's Steam Frame) are untested — see [docs/other-platforms.md](docs/other-platforms.md).
 
 ## License
 
