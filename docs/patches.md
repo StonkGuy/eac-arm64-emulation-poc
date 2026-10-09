@@ -1,6 +1,6 @@
 # The patch series
 
-Twenty-one patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
+Twenty patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
 (`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610. They are not all the same kind of thing, so they are
 grouped here by what they are for:
 
@@ -243,13 +243,7 @@ execute breakpoints (DR0–DR3 with DR7) are stored (0012) but never fire; makin
 inside the JIT, and nothing on this project's path needs it. The remaining `ntdll:exception` failures are in that
 area plus segment selectors other than CS/SS and x87/SSE precision corners.
 
-**A sixth patch in this group, `0021` (`pop r/m` leaves RSP unchanged on fault), was written and then withdrawn.**
-It passes `tests/pop-fault` but the rewrite of the JIT `pop r/m` memory-destination path broke the normal
-(non-faulting) execution EAC's launcher relies on: with it installed, VRChat's EAC launcher hangs at `Starting Wine
-module mapping` and never reaches `Launcher finished with: 301` (bisected live — 0001–0020 reach 301, 0001–0021 do
-not, on the same VM). The only consumer of its behaviour is a synthetic test; the real consumer it broke is the
-game. `tests/pop-fault` is kept in the tree as a known-fail recording the withdrawn behaviour, and the series ships
-without 0021.
+**Withdrawn: `0021` (`pop r/m` leaves RSP unchanged on a fault).** It makes `tests/pop-fault` pass, but its rewrite of the JIT `pop r/m` memory-destination path breaks the normal, non-faulting path. With it installed, the EAC launcher hangs at `Starting Wine module mapping` and never reaches `Launcher finished with: 301` (0001–0020 reach 301; 0001–0021 do not). The patch is kept for reference in [`patches/withdrawn/`](../patches/withdrawn/README.md) and is not part of the series. `tests/pop-fault` therefore fails on the shipped series.
 
 ---
 
