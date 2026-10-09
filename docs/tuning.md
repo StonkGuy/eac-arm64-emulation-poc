@@ -54,6 +54,26 @@ This works on the Asahi host and inside the muvm guest (checked with a 10-line C
 already costs nothing in the JIT output. `FEX_TSOENABLED=0` therefore only changes the cost of the rare helper paths
 (`memcpy`-style ops, `getpid` above) and weakens the memory-ordering guarantees; keep the default.
 
+## 3b. macOS guest: pipeline caches are cold on every launch
+
+On the macOS port (`DXVK -> Venus -> virglrenderer -> KosmicKrisp -> Metal`, [macos-port.md](macos-port.md)) the
+reported freezes are **serial Metal pipeline compilation**, and they repeat every run because nothing is reused. After
+a full VRChat session the caches are still empty:
+
+| cache | after a session |
+|---|---|
+| DXVK state cache (`DXVK_state_cache`) | empty; no `*.dxvk-cache` in the game dir or prefix |
+| Steam FOSSILIZE bucket (`fozpipelinesv6`) | empty; no `steamapprun_pipeline_cache*` |
+| Venus/Mesa shader cache (`mesa_shader_cache_sf`) | 4.1 MB total; the Venus and Zink jars are 157 B / 16 B headers |
+| Metal shader cache (launcher `MTLSetShaderCachePath`) | ~9.5 MB in the per-user `com.apple.metalfe` dir, per boot |
+
+The environment looks correct (`DXVK_STATE_CACHE_PATH`, `ENABLE_VK_LAYER_VALVE_steam_fossilize_1`,
+`STEAM_FOSSILIZE_DUMP_PATH`, `DXVK_SHADER_CACHE=1`) yet the buckets stay empty, so the stall profile swings between
+boots (a 349 s compile stall on one boot, a 2.5 s one on the next) and run-to-run frame rate is not comparable. The
+only lever aimed at the cause is asynchronous KosmicKrisp compilation (`MESA_KK_ASYNC_PIPELINES`, fork patch 0041, with
+the crash fix in 0047). It is off by default and its stutter benefit has not been measured yet, so there is no
+verified improvement to recommend; the finding above is the diagnostic result.
+
 ## 4. Code invalidation with many threads
 
 `mprotect` on a data page, 100k calls, 190 parked guest threads: stock FEX 790 ms, with `patches/0004` 32 ms (the same
