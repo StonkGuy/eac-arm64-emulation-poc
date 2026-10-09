@@ -82,7 +82,7 @@ the 16 GB host) is a secondary contributor; the CPU is not the limiter (the emul
 THE FINALS (Steam 2073850, a UE5 title) does not reach gameplay on this setup. It stops before the game's own
 renderer starts, inside the title's own anti-tamper. This is a record of where it stops, not a supported configuration.
 
-* The anti-tamper is **Embark Theia** (user-mode, in-process; the launcher `Discovery.exe` carries the Theia runtime)
+* The anti-tamper is **Embark Theia** (user-mode, in-process; the title's launcher executable carries the Theia runtime)
   together with **Denuvo Anti-Cheat**. The install has no Easy Anti-Cheat, so EAC is not what blocks this title.
 * The bootstrapper spawns the game child, which runs Denuvo/Theia code and then loops in its own memory scan. The
   parent waits on the child indefinitely, and the game never loads a graphics module.
@@ -101,7 +101,7 @@ not in this repository ([fork notes](https://github.com/StonkGuy/steamac/blob/fe
 
 | issue | handling in the fork |
 |---|---|
-| shader-compile stalls | opt-in asynchronous pipeline compilation in KosmicKrisp (`MESA_KK_ASYNC_PIPELINES`, off by default, set in the launcher's environment). The render-encoder crash it caused under VRChat is fixed by KosmicKrisp patch 0047; `=2` is the mode verified live (several world loads, no crash). The stutter benefit is not yet measured, so no improvement is claimed |
+| shader-compile stalls | opt-in asynchronous pipeline compilation in KosmicKrisp (`MESA_KK_ASYNC_PIPELINES`, off by default and not recommended, set in the launcher's environment). It crashed the render encoder under VRChat; KosmicKrisp patch 0047 addresses that crash in code, but no live run on record includes 0047. An idle in-world run with `=1` was clearly worse than off, so no stutter improvement is claimed |
 | microphone start can freeze the guest: steamac's CoreAudio virtio-snd backend starts capture synchronously under a shared lock; over 1 s gives a guest `virtio_snd` control-message time-out, PipeWire is killed and the game freezes. Without macOS microphone permission the capture stream floods the log instead | kernel parameter `virtio_snd.msg_timeout_ms=10000` (workaround) and libkrun patch 0017 (asynchronous capture start); re-verified |
 | launcher present path and input | triple-buffered present, lower default log level, Metal HUD library loaded only when needed, direct-to-display presentation, key releases never dropped, HID off the main thread, Retina EDID DPI, a render-scale control (`--render-scale`, default off), plus the audit's stall/pad-port/`framebufferOnly`/Clipboard fixes — all built and re-verified (adversarial repros pass) |
 | full-frame scanout copy per present | libkrun patch 0018 (copy only the damage owed to each frame); re-verified (0/256 trials stale) |

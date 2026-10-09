@@ -70,9 +70,10 @@ a full VRChat session the caches are still empty:
 The environment looks correct (`DXVK_STATE_CACHE_PATH`, `ENABLE_VK_LAYER_VALVE_steam_fossilize_1`,
 `STEAM_FOSSILIZE_DUMP_PATH`, `DXVK_SHADER_CACHE=1`) yet the buckets stay empty, so the stall profile swings between
 boots (a 349 s compile stall on one boot, a 2.5 s one on the next) and run-to-run frame rate is not comparable. The
-only lever aimed at the cause is asynchronous KosmicKrisp compilation (`MESA_KK_ASYNC_PIPELINES`, fork patch 0041, with
-the crash fix in 0047). It is off by default and its stutter benefit has not been measured yet, so there is no
-verified improvement to recommend; the finding above is the diagnostic result.
+only lever aimed at the cause is asynchronous KosmicKrisp compilation (`MESA_KK_ASYNC_PIPELINES`, fork patch 0041;
+patch 0047 addresses its render-encoder crash in code). It stays off by default and is not recommended: one idle
+in-world run with `=1` was clearly worse than off, and no run on record shows a stutter improvement. The finding
+above is the diagnostic result.
 
 ## 4. Code invalidation with many threads
 
