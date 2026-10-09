@@ -1,7 +1,8 @@
 # The patch series
 
-Twenty patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
-(`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610. They are not all the same kind of thing, so they are
+Twenty-five patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
+(`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610; 0022–0026 on top of 0001–0020
+(`0021` is withdrawn, see below). They are not all the same kind of thing, so they are
 grouped here by what they are for:
 
 | group | patches | what it is |
@@ -12,10 +13,11 @@ grouped here by what they are for:
 | **D. Diagnostics** | 0003, 0005, 0006, 0009 | **not fixes** — tools that made the bugs visible without ptrace |
 | **E. Kernel-fidelity gaps** | 0011, 0012, 0013, 0014, 0015 | the answers a real kernel gives for `arch_prctl`, the debug registers, `/proc/<pid>/status`, unknown regsets and `restart_syscall` |
 | **F. Signal frames and faults** | 0016–0020 | what Windows exception handling under Wine reads from and writes to a signal frame |
+| **G. Second title** | 0022–0026 | what a second title's anti-tamper bootstrapper (THE FINALS) observes: host stack per SIGSYS trap, faults on FEX's own mappings, single-step after `iretq`, a thread exiting on its signal stack |
 
 Patches 0001–0010 are needed for the game (0001 to inject at all, 0002 so the injected client finishes loading, 0007 to
 avoid the disconnects, 0010 for the seccomp/SIGSYS path; 0008 is a correctness fix in the same area and 0004 is
-performance). Group D is instrumentation you can drop. Groups E and F are not on VRChat's path — they exist because a
+performance). Group D is instrumentation you can drop. Groups E, F and G are not on VRChat's path — they exist because a
 real kernel and FEX give different answers there, and a title or Wine itself observes the difference.
 
 Everything is measured on **one game (VRChat) on one machine (Apple M2, Fedora Asahi Remix)**. Treat the series as a
@@ -244,6 +246,35 @@ inside the JIT, and nothing on this project's path needs it. The remaining `ntdl
 area plus segment selectors other than CS/SS and x87/SSE precision corners.
 
 **Withdrawn: `0021` (`pop r/m` leaves RSP unchanged on a fault).** It makes `tests/pop-fault` pass, but its rewrite of the JIT `pop r/m` memory-destination path breaks the normal, non-faulting path. With it installed, the EAC launcher hangs at `Starting Wine module mapping` and never reaches `Launcher finished with: 301` (0001–0020 reach 301; 0001–0021 do not). The patch is kept for reference in [`patches/withdrawn/`](../patches/withdrawn/README.md) and is not part of the series. `tests/pop-fault` therefore fails on the shipped series.
+
+---
+
+## G. Second title — patches 0022–0026
+
+Found by running a second title, THE FINALS, live. Its anti-tamper bootstrapper traps every NT syscall through Wine's
+seccomp filter, reads `/proc/self/maps` and probes every inaccessible range, single-steps over a `syscall`, and has
+Wine end threads that sit in trapped syscalls. Each patch below is one of those observations; none of them costs
+anything on the common path.
+
+| patch | behaviour | stock FEX | patched | test |
+|---|---|---|---|---|
+| 0022 | a SIGSYS trap delivered from inside the syscall handler returns to the thread's own host-stack level | every trap left the handler's host frames behind (~400 B); a thread died after a few thousand traps | no growth; 100 000 traps on one thread | `tests/seccomp-trap` (check 6) |
+| 0023 | a guest read of FEX's call/ret shadow-stack guard page is delivered to the guest as SIGSEGV | treated as a shadow-stack over/underflow and the same load resumed: an endless host fault loop | only a fault where an x25 push/pop lands is a shadow-stack event | `tests/maps-probe` |
+| 0024 | `FEX_PROFILESAMPLEMINTHREADS` sets the sampler's thread threshold; `0` stores one snapshot per external `SIGPROF` instead of starting a sampler thread | the sampler started only at 100 threads | for a process that must not grow a thread | — (diagnostic option, group D) |
+| 0025 | with TF set, the trap after `popfq; iretq` lands on the `iretq` target, and single-stepping across translated code traps once per instruction | the trap landed one instruction late, or escaped through the lookup caches | dispatcher bounce on `iretq` and on indirect exits while TF is set | `tests/tf-iret` |
+| 0026 | a thread that exits from a signal handler running on its alt stack keeps that stack until it has left it | the alt stack was unmapped under the running handler; Wine's thread termination crashed the process | released after the return to the thread's own stack | `tests/seccomp-trap` (check 7) |
+
+**Without them:** the bootstrapper's first thread spins forever in FEX's fault handler (0023), its single-step check
+fails and it writes a crash dump (0025), and a seccomp-heavy Wine thread dies of host-stack exhaustion (0022). With
+0022–0026 the title gets past its bootstrapper and starts its anti-cheat runtime; it then stops inside the anti-cheat's
+own integrity checks, which this project does not work on.
+
+**Cost.** 0022 is per-trap work only, 0023 per host fault inside the shadow-stack allocation, 0025 only on `iretq` and on
+blocks compiled while TF is set, 0026 only on thread exit.
+
+**Verified by.** Each test passes natively on x86-64 and under the patched FEX; `maps-probe` hangs and `tf-iret` fails
+checks 4–5 on the 0001–0020 build (same code as stock). A Wine program that terminates a thread spinning in raw
+syscalls crashed 3/3 without 0026 and completes 160/160 with it, as natively.
 
 ---
 

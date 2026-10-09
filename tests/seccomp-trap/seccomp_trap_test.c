@@ -15,6 +15,10 @@
 //      rsi, rdx, r10, r8, r9) out of the ucontext
 //   4. the handler writes a return value into the ucontext's rax and execution resumes after the syscall with it
 //   5. 1000 consecutive traps behave identically (stability)
+//   6. 100000 further traps complete: a trapped syscall must not consume host stack (a hang or crash here, after a few
+//      thousand traps, is the failure; run it under `timeout`)
+//   7. a thread busy in trapped syscalls can be ended by a signal whose handler calls exit(), as Wine's SIGQUIT thread
+//      termination does (a crash of the whole process here is the failure)
 //
 // The same source builds for x86-64 (the binary to run under FEX) and for aarch64 (the reference run on the host's own
 // Linux kernel): only the system-call glue, the register slots and AUDIT_ARCH differ.
@@ -235,6 +239,35 @@ static i64 install_filter(void) {
 #define SI_ARCH() ((u64)(sigo_buf[3] >> 32))
 #define G(slot) (gregs_buf[(slot)])
 
+#if defined(__x86_64__)
+static volatile int thr_done, thr_ok;
+__attribute__((used)) void thread_main(void) {
+  int ok = 1;
+  for (int i = 0; i < 100000; ++i)
+    if (trapped_syscall(0x1000, 1, 2, 3, 4, 5, 6) != (i64)retval) ok = 0;
+  thr_ok = ok;
+  thr_done = 1;
+  sc2(60, 0, 0);   // exit (this thread only)
+}
+
+// (7) Wine terminates another thread with SIGQUIT; its handler ends the thread with exit() right there
+// (quit_handler -> abort_thread). Here a worker spins on trapped syscalls and the main thread sends it a signal whose
+// handler calls exit(), so the signal lands while the thread is inside the trapped-syscall path. The handler is outside
+// the trapped range, so its own exit syscall is not trapped.
+enum { SIGUSR1 = 10 };
+static volatile int exit_handler_runs, exit_worker_tid, exit_worker_running;
+__attribute__((used)) static void hexit(int sig, void* info, void* uc) {
+  (void)sig; (void)info; (void)uc;
+  ++exit_handler_runs;
+  sc2(60, 0, 0);   // exit (this thread only), from inside the handler
+}
+__attribute__((used)) void thread_exit_main(void) {
+  exit_worker_tid = (int)sc2(186, 0, 0);   // gettid
+  exit_worker_running = 1;
+  for (;;) trapped_syscall(0x1000, 0, 0, 0, 0, 0, 0);   // ended by the signal handler
+}
+#endif
+
 __attribute__((used)) static void entry_c(void) {
   u64 pre_pid = sc2(SYS_getpid, 0, 0);
 
@@ -273,6 +306,79 @@ __attribute__((used)) static void entry_c(void) {
   for (int i = 0; i < 1000; ++i)
     if (trapped_syscall(nr, args[0], args[1], args[2], args[3], args[4], args[5]) != (i64)retval) stable = 0;
   check(trap_count == 1001 && stable, "1000 consecutive traps stay stable");
+
+  // (6) Wine's anti-tamper-style code traps every NT syscall, hundreds of thousands per run, on worker threads. Each trap is
+  // delivered from inside the emulator's syscall handler and left through rt_sigreturn with a changed RIP; if that path
+  // keeps the handler's host stack frames, the emulator's own stack (8 MiB on a thread) is exhausted after a few thousand
+  // traps and the thread spins on its stack guard page. Run on a thread; the main thread is outside the trapped range.
+#if defined(__x86_64__)
+  {
+    static unsigned char thr_stack[65536] __attribute__((aligned(16)));
+    i64 tid;
+    register i64 r10_zero __asm__("r10") = 0;
+    register i64 r8_zero __asm__("r8") = 0;
+    __asm__ volatile("syscall\n\t"
+                     "test %%rax, %%rax\n\t"
+                     "jnz 1f\n\t"
+                     "xor %%ebp, %%ebp\n\t"
+                     "call thread_main\n"
+                     "1:"
+                     : "=a"(tid)
+                     : "a"(56), "D"(0x50f00UL), "S"(thr_stack + sizeof thr_stack), "d"(0), "r"(r10_zero), "r"(r8_zero)
+                     : "rcx", "r11", "memory");
+    check(tid > 0, "create a worker thread (the filter is inherited)");
+    // Wait up to 60 s in 10 ms sleeps (nanosleep, issued outside the trapped range): a time bound, not a spin count, so the
+    // result does not depend on how fast the host runs sched_yield.
+    static const i64 ten_ms[2] = {0, 10000000};
+    for (int waits = 0; !thr_done && waits < 6000; ++waits) sc2(35, (i64)ten_ms, 0);
+    check(thr_done && thr_ok, "100000 further traps on a worker thread complete (a trap does not leak host stack)");
+  }
+
+  // (7) 20 threads, one after another: each spins on trapped syscalls until the main thread sends it a signal whose handler
+  // ends it with exit(). The kernel clears the CLONE_CHILD_CLEARTID word when the thread is gone. An emulator that runs the
+  // handler on its own signal stack must not free that stack while the exiting thread still stands on it (that crashes the
+  // whole process, so this check never prints).
+  {
+    struct ksigaction ax = MAKE_ACTION(hexit);
+    sc6(SYS_rt_sigaction, SIGUSR1, (i64)&ax, 0, 8, 0, 0);
+    static unsigned char exit_stack[65536] __attribute__((aligned(16)));
+    static volatile int child_tid_word;
+    static const i64 one_ms[2] = {0, 1000000};
+    int exited = 0;
+    for (int t = 0; t < 20; ++t) {
+      child_tid_word = 1;
+      exit_worker_running = 0;
+      i64 tid;
+      register i64 r10_ctid __asm__("r10") = (i64)&child_tid_word;
+      register i64 r8_zero __asm__("r8") = 0;
+      __asm__ volatile("syscall\n\t"
+                       "test %%rax, %%rax\n\t"
+                       "jnz 1f\n\t"
+                       "xor %%ebp, %%ebp\n\t"
+                       "call thread_exit_main\n"
+                       "1:"
+                       : "=a"(tid)
+                       : "a"(56), "D"(0x50f00UL | 0x200000UL /* CLONE_CHILD_CLEARTID */), "S"(exit_stack + sizeof exit_stack),
+                         "d"(0), "r"(r10_ctid), "r"(r8_zero)
+                       : "rcx", "r11", "memory");
+      if (tid <= 0) break;
+      for (int waits = 0; !exit_worker_running && waits < 5000; ++waits) sc2(35, (i64)one_ms, 0);
+      sc2(35, (i64)one_ms, 0);   // let it trap for a while
+      sc3(234, sc2(SYS_getpid, 0, 0), exit_worker_tid, SIGUSR1);   // tgkill
+      for (int waits = 0; child_tid_word != 0 && waits < 10000; ++waits) sc2(35, (i64)one_ms, 0);
+      if (child_tid_word == 0) ++exited;
+    }
+    check(exited == 20 && exit_handler_runs == 20,
+          "20 threads busy in trapped syscalls end themselves with exit() inside a signal handler");
+  }
+#else
+  {
+    int long_ok = 1;
+    for (int i = 0; i < 100000; ++i)
+      if (trapped_syscall(nr, args[0], args[1], args[2], args[3], args[4], args[5]) != (i64)retval) long_ok = 0;
+    check(long_ok, "100000 further traps complete (a trap does not leak host stack)");
+  }
+#endif
 
   out(failures ? "RESULT: FAIL\n" : "RESULT: PASS\n");
   sc2(SYS_exit_group, failures, 0);

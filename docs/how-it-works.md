@@ -125,7 +125,7 @@ range and invalidates the per-thread executable-range caches lazily with an epoc
 
 Attaching `ptrace`/`perf` to a process running Easy Anti-Cheat is detected at once ("Forbidden system configuration
 (Debugger detected.)") and must not be attempted. `FEX_PROFILESAMPLEHZ=<hz>` (with `FEX_PROFILESAMPLEALLTHREADS=1` and
-`FEX_LIBRARYJITNAMING=1`) starts an in-process sampler once the process has more than 100 guest threads; create
+`FEX_LIBRARYJITNAMING=1`) starts an in-process sampler once the process has more than 100 guest threads (`FEX_PROFILESAMPLEMINTHREADS` changes the threshold; `0` starts no sampler thread at all and instead stores one snapshot record per `SIGPROF` sent from outside with `kill -PROF <pid>`, for a process that must not grow a thread, with the live guest RIP and registers when the thread was in translated code — patch 0024); create
 `/dev/shm/fex-<pid>-sample-on` inside the VM to sample, delete it to stop, then resolve
 `/dev/shm/fex-<pid>-samples` with `tools/resolve_samples.py`: copy the samples, `/tmp/perf-<pid>.map` and the process's
 `maps` into one directory as `samples<TAG>.bin`, `perf<TAG>.map`, `maps<TAG>.txt` and run
