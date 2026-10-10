@@ -24,7 +24,8 @@
 //   6. a signal delivered with RSP not pointing at a live, writable guest stack. The kernel's setup_rt_frame faults
 //      copying the frame, takes its Efault path and calls force_sigsegv(SIGSEGV, current) (arch/x86/kernel/signal.c),
 //      which forces SIG_DFL and kills the thread with SIGSEGV -- the guest's handler is bypassed. The check is that the
-//      process dies from SIGSEGV, not from FEX faulting inside its own host signal handler.
+//      process dies from SIGSEGV, not from FEX faulting inside its own host signal handler -- also when the
+//      undeliverable signal is itself a SIGSEGV.
 //
 // Build: tests/signal-frame/build.sh [clang]   (x86-64 binary, run it under FEX)   or   build.sh native (host architecture)
 // Run:   ./signal_frame_test   (exit status = number of failed checks)
@@ -109,6 +110,7 @@ extern void do_step(void);
 extern void step_nop(void);
 extern void step_after(void);
 extern void do_badsp(void);
+extern void do_badsp_segv(void);
 extern void badsp_after(void);
 
 #if defined(__x86_64__)
@@ -197,6 +199,13 @@ __asm__(".section .rwx,\"awx\",@progbits\n.balign 16\n"
         "  movq $1, g_resume(%rip)\n"
         "  mov g_saved_sp(%rip), %rsp\n"
         "  ret\n"
+        // the same with a SIGSEGV (a load from address 0) as the signal that cannot be delivered
+        ".balign 16\n.globl do_badsp_segv\ndo_badsp_segv:\n"
+        "  mov %rsp, g_saved_sp(%rip)\n"
+        "  movabs $0x8000000000000000, %rsp\n"
+        "  movq 0, %rax\n"
+        "  mov g_saved_sp(%rip), %rsp\n"
+        "  ret\n"
         ".section .text\n");
 #else
 __asm__(".section .rwx,\"awx\",@progbits\n.balign 16\n"
@@ -211,6 +220,7 @@ __asm__(".section .rwx,\"awx\",@progbits\n.balign 16\n"
         ".globl step_after\nstep_after:\n  ret\n"
         ".globl do_badsp\ndo_badsp:\n  ret\n"
         ".globl badsp_after\nbadsp_after:\n  ret\n"
+        ".globl do_badsp_segv\ndo_badsp_segv:\n  ret\n"
         ".section .text\n");
 #endif
 
@@ -423,6 +433,21 @@ __attribute__((used)) static void entry_c(void) {
     int status = -1;
     sc4(SYS_wait4, pid, (i64)&status, 0, 0);
     check(pid > 0 && (status & 0x7f) == SIGSEGV, "bad SP: the process is terminated by SIGSEGV, as Linux does");
+  }
+  out("case6\n");
+  {
+    // The same with a SIGSEGV as the undeliverable signal. An emulator sets up this frame inside its own SIGSEGV
+    // handler, where the host blocks SIGSEGV: the forced SIGSEGV must still kill the process, not leave it pending.
+    i64 pid = sc4(SYS_fork, 0, 0, 0, 0);
+    if (pid == 0) {
+      reset();
+      do_badsp_segv();
+      sc4(SYS_exit_group, 1, 0, 0, 0);
+      __builtin_unreachable();
+    }
+    int status = -1;
+    sc4(SYS_wait4, pid, (i64)&status, 0, 0);
+    check(pid > 0 && (status & 0x7f) == SIGSEGV, "bad SP on a SIGSEGV: the process is terminated by SIGSEGV, as Linux does");
   }
 #endif
 
