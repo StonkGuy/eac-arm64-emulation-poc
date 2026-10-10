@@ -276,6 +276,10 @@ blocks compiled while TF is set, 0026 only on thread exit.
 checks 4–5 on the 0001–0020 build (same code as stock). A Wine program that terminates a thread spinning in raw
 syscalls crashed 3/3 without 0026 and completes 160/160 with it, as natively.
 
+On VRChat the five patches change nothing measurable: in back-to-back idle in-world runs under the same host
+conditions, 0001–0020 gave 37.7 and 41.3 fps and 0001–0026 gave 39.0, 48.6 and 41.7 fps (1% lows 17.5–18.7 and
+18.4–22.1), every run joined a world, and the EAC launcher finished with `301` on the 0001–0026 build.
+
 ---
 
 ## Applying
