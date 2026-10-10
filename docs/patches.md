@@ -48,12 +48,17 @@ launcher uses (`GETREGS/SETREGS`, `GETREGSET/SETREGSET`, `PEEK*`/`POKE*` with co
 `GETSIGINFO`, `CONT`, `SYSCALL`, `DETACH`), and a `/proc/<pid>/exe` that names the guest binary. The full conversation
 is in [how-it-works.md](how-it-works.md).
 
-**Without it:** no anti-cheat session. **Verified by:** `tests/ptrace-inject` (29 checks, passes under FEX; the binary
+**Without it:** no anti-cheat session. **Verified by:** `tests/ptrace-inject` (35 checks, the last six being a stale-exit-stop check after an entry stop resumed with `CONT` and a no-state-file check for a failing `PTRACE_TRACEME`; passes under FEX; the binary
 also targets native x86-64 Linux as the reference, see [tools.md](tools.md)). **Limits** (all off the launcher's path,
 none costs anything when unused): only the main thread of a tracee is traced; `PTRACE_ATTACH` to an already-running FEX
 process is not emulated; `PTRACE_SINGLESTEP` and `PTRACE_SEIZE`/`INTERRUPT`/`LISTEN` are passed to the host and do not
 give a guest-instruction stop; `PEEKUSER`/`POKEUSER` at an in-`struct user` offset with no register handler answer `0`
-where a real kernel answers `-EIO` (patch 0012 fixes this for the debug-register offsets the launcher uses).
+where a real kernel answers `-EIO` (patch 0012 fixes this for the debug-register offsets the launcher uses). Also not
+emulated, because the launcher does not reach them: a tracee exec'd without `PTRACE_O_TRACEEXEC` (the launcher sets it),
+the `TRACESYSGOOD` option (stops always carry `SIGTRAP|0x80`; the launcher sets it), `waitid` (only `wait4` is
+rewritten), and a `clone(CLONE_VM)` child that is not a thread (`posix_spawn`, `vfork`) of a traced process, which
+shares the parent's state block and can switch its stops off. A tracer that dies before its `wait4` saw the tracee exit
+leaves the tracee's `/dev/shm/fex-ptrace-state-<pid>` behind until the pid is reused.
 
 ---
 
@@ -124,7 +129,10 @@ code**.
 **Verified by:** `tests/seccomp-trap` and `tests/seccomp-trap-noexec` (14 checks; both pass under FEX with
 `FEX_NEEDSSECCOMP=1` and natively, and both fail before this patch — building the series one patch at a time flips
 `seccomp-trap-noexec` from FAIL to PASS at exactly patch 0010). **Limits:** the ia32 non-realtime and realtime frame
-paths are patched alongside the x86-64 one but no ia32 test exercises them (pending).
+paths are patched alongside the x86-64 one but no ia32 test exercises them (pending). A trapped syscall while the
+guest has `SIGSYS` blocked is deferred instead of killing the process as the kernel does (`force_sig_seccomp`), and the
+recorded post-syscall `rip` then stays on the thread until the signal is finally delivered; Wine's `sigsys_handler` never
+runs a trapped syscall with `SIGSYS` blocked.
 
 ---
 
@@ -210,7 +218,8 @@ limits, all off VRChat's path:
   nothing traps on them — see the limits of group F.
 * **0013** — the `/proc/<pid>/status` creator is **our patch code**. The difference shows only with
   `FEX_NEEDSSECCOMP=1` (a stock option), where FEX emulates the guest's filters instead of installing them on the host
-  process; that is the setting Wine's seccomp path needs, so the test sets it itself.
+  process; that is the setting Wine's seccomp path needs, so the test sets it itself. Without `FEX_NEEDSSECCOMP` the
+  line reads 0 whatever filter FEX itself inherited from the host (the guest's own `seccomp()` answers `-EINVAL` then).
 * **0014** — FEX does not model the xsave vector state, so the `NT_X86_XSTATE` shadow round-trips zero-filled rather
   than synthesising a fake `xstate_bv`. `NT_ARM_*` types stay `-EINVAL` (they do not exist in an x86-64 view).
 
@@ -231,7 +240,7 @@ These patches close the gaps that Wine's own `ntdll:exception` test and a real-k
 | 0017 | the frame and `mov %cs`/`%ss` report `__USER_CS` = `0x33` and `__USER_DS` = `0x2b` (`0x23` for 32-bit code) | a bare GDT index (`0x30`) for CS and 0 for SS | `tests/signal-frame` |
 | 0018 | `FP_XSTATE_MAGIC1` in `sw_reserved`, `xstate_size` = the state's size, `FP_XSTATE_MAGIC2` right after it (`fpu/signal.c`) — how a handler (Wine's among them) finds the AVX state. Without AVX (`FEX_HOSTFEATURES=disableavx`, no XSAVE in CPUID) the 512-byte FXSAVE frame with no `MAGIC2`, as the kernel writes without XSAVE | wrote the magic only with AVX enabled and a size that pointed past the trailer | `tests/signal-frame`, also with `FEX_HOSTFEATURES=disableavx` |
 | 0019 | when the frame cannot be written at the interrupted RSP, the thread dies from `SIGSEGV` (`force_sigsegv`) | wrote the frame without checking the guest mapping; if RSP pointed at host memory FEX corrupted itself inside its own signal handler | `tests/signal-frame` (guard, see below) |
-| 0020 | the frame's `uc_sigmask` holds the interrupted mask, and `rt_sigreturn` installs whatever the handler left there | never wrote the field (handlers read stack garbage) and ignored a handler's rewrite | `tests/signal-frame` |
+| 0020 | the frame's `uc_sigmask` holds the interrupted mask, and `rt_sigreturn` installs whatever the handler left there, minus `SIGKILL`/`SIGSTOP` (never blockable) | never wrote the field (handlers read stack garbage) and ignored a handler's rewrite | `tests/signal-frame`, `tests/signal-mask` (check 7) |
 
 **Cost.** Nothing on the common path: 0016, 0017, 0018 and 0020 change what is written to or read from a signal frame;
 0019 adds one lookup in the guest mapping table per signal delivered.

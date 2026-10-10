@@ -11,6 +11,8 @@
 //   4. so a second SIGUSR1 sent from inside the handler does not nest: it stays pending and runs after the handler returns
 //   5. rt_sigreturn restores exactly the mask the interrupted code had
 //   6. SA_NODEFER really lets the signal nest
+//   7. a handler that writes SIGKILL/SIGSTOP into the frame's uc_sigmask gets them dropped by rt_sigreturn (the kernel
+//      removes them in set_current_blocked), while the other bits it wrote are honoured (x86-64 frame layout only)
 //
 // The same source builds for x86-64 (the binary to run under FEX) and for aarch64 (the reference run on the host's own Linux
 // kernel): only the system-call glue differs. Expected: passes on a Linux kernel. On FEX with FEX_SIGNALMASKFIX=0 (the stock
@@ -44,7 +46,7 @@ enum { SYS_write = 64, SYS_rt_sigaction = 134, SYS_rt_sigprocmask = 135, SYS_get
 #else
 #error "x86-64 and aarch64 only"
 #endif
-enum { SIGUSR1 = 10, SIGUSR2 = 12, SIGALRM = 14 };
+enum { SIGKILL = 9, SIGSTOP = 19, SIGUSR1 = 10, SIGUSR2 = 12, SIGALRM = 14 };
 enum { SIG_BLOCK = 0, SIG_UNBLOCK = 1, SIG_SETMASK = 2 };
 #define SA_SIGINFO 0x4
 #define SA_NODEFER 0x40000000
@@ -99,6 +101,14 @@ static void handler_wine(int sig, void* info, void* uc) {
   --depth;
 }
 
+#if defined(__x86_64__)
+// Handler for check 7: rewrite the frame's uc_sigmask (offset 296 in the x86-64 ucontext) to include SIGKILL and SIGSTOP.
+static void handler_killmask(int sig, void* info, void* uc) {
+  (void)sig; (void)info;
+  *(volatile u64*)((char*)uc + 296) |= BIT(SIGKILL) | BIT(SIGSTOP) | BIT(SIGUSR2);
+}
+#endif
+
 __attribute__((used)) static void entry_c(void) {
   // 1 + 2: mask inside a handler
   install(SIGUSR1, (void*)handler_probe, 0, 0);
@@ -126,6 +136,17 @@ __attribute__((used)) static void entry_c(void) {
   depth = max_depth = invocations = 0; resend = 1;
   raise_self(SIGUSR1);
   check(invocations == 2 && max_depth == 2, "6. SA_NODEFER lets the signal nest");
+
+#if defined(__x86_64__)
+  // 7: SIGKILL and SIGSTOP can never be blocked
+  install(SIGUSR1, (void*)handler_killmask, 0, 0);
+  setmask(SIG_SETMASK, 0);
+  raise_self(SIGUSR1);
+  u64 after = getmask();
+  check((after & BIT(SIGUSR2)) != 0, "7a. a bit the handler added to uc_sigmask is honoured by rt_sigreturn");
+  check((after & (BIT(SIGKILL) | BIT(SIGSTOP))) == 0, "7b. rt_sigreturn never blocks SIGKILL or SIGSTOP");
+  setmask(SIG_SETMASK, 0);
+#endif
 
   out(failures ? "RESULT: FAIL\n" : "RESULT: PASS\n");
   sc4(SYS_exit_group, failures, 0, 0, 0);

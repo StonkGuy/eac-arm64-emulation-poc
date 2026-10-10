@@ -44,11 +44,11 @@ static inline i64 sc6(i64 nr, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
 enum {
   SYS_read = 0, SYS_write = 1, SYS_open = 2, SYS_close = 3, SYS_getpid = 39, SYS_fork = 57, SYS_execve = 59, SYS_wait4 = 61,
   SYS_kill = 62, SYS_readlink = 89, SYS_chmod = 90, SYS_getuid = 102, SYS_ptrace = 101, SYS_getppid = 110, SYS_unlink = 87,
-  SYS_exit_group = 231,
+  SYS_pipe = 22, SYS_exit_group = 231,
 };
 enum {
   PT_TRACEME = 0, PT_PEEKTEXT = 1, PT_POKETEXT = 4, PT_POKEUSER = 6, PT_PEEKUSER = 3, PT_CONT = 7, PT_GETREGS = 12, PT_SETREGS = 13,
-  PT_DETACH = 17, PT_SYSCALL = 24, PT_SETOPTIONS = 0x4200, PT_GETREGSET = 0x4204, PT_SETREGSET = 0x4205,
+  PT_DETACH = 17, PT_SYSCALL = 24, PT_SEIZE = 0x4206, PT_SETOPTIONS = 0x4200, PT_GETREGSET = 0x4204, PT_SETREGSET = 0x4205,
 };
 enum { SIGTRAP_ = 5, SIGSEGV_ = 11, SIGSTOP_ = 19 };
 enum { NT_PRSTATUS_ = 1 };
@@ -145,6 +145,76 @@ static int copy_self_and_exec(void) {
   sc3(SYS_execve, payload_path, argv, envp);
   sc1(SYS_exit_group, 91);
   return 0;
+}
+
+
+// ------------------------------------------------------------------------------------------------------
+// extras: two behaviours the injection flow above does not reach
+// ------------------------------------------------------------------------------------------------------
+static void state_file_path(char* d, u64 pid) { ucopy(d, "/dev/shm/fex-ptrace-state-"); u64dec(d + slen(d), pid); }
+static int file_exists(const char* p) { i64 fd = sc2(SYS_open, p, 0); if (fd >= 0) sc1(SYS_close, fd); return fd >= 0; }
+
+// child of the "stale open syscall" check: stops itself, then runs getpid, getppid, a self SIGSTOP and getuid
+static void stale_child(void) {
+  ptrace(PT_TRACEME, 0, 0, 0);
+  i64 me = sc1(SYS_getpid, 0);
+  sc2(SYS_kill, me, SIGSTOP_);
+  sc1(SYS_getpid, 0);
+  sc1(SYS_getppid, 0);
+  sc2(SYS_kill, me, SIGSTOP_);
+  sc1(SYS_getuid, 0);
+  sc1(SYS_exit_group, 0);
+}
+
+static void extras(void) {
+  int st = 0; u64 regs[NREGS];
+
+  // ---- an entry stop resumed with PTRACE_CONT leaves no syscall "open": the exit of that syscall is never
+  // reported, so a later PTRACE_SYSCALL must start with the next syscall's entry stop, not with a stale exit stop.
+  i64 c = sc1(SYS_fork, 0);
+  if (c == 0) { stale_child(); sc1(SYS_exit_group, 93); }
+  check(c > 0 && wait_status(c, &st) && STOPPED(st) && STOPSIG(st) == SIGSTOP_, "extras: initial SIGSTOP of the second child");
+  ptrace(PT_SETOPTIONS, c, 0, 1 /* TRACESYSGOOD */);
+  int entry_ok = 0, resumed_ok = 0, next_ok = 0;
+  if (ptrace(PT_SYSCALL, c, 0, 0) == 0 && wait_status(c, &st) && STOPPED(st) && STOPSIG(st) == (SIGTRAP_ | 0x80) && get_regs(c, regs))
+    entry_ok = regs[ORIG_RAX] == SYS_getpid && regs[RAX] == (u64)-38;
+  check(entry_ok, "extras: PTRACE_SYSCALL stops at the entry of getpid");
+  // continue (no further syscall stops); the child runs getpid, getppid and stops itself with SIGSTOP
+  if (ptrace(PT_CONT, c, 0, 0) == 0 && wait_status(c, &st) && STOPPED(st) && STOPSIG(st) == SIGSTOP_) resumed_ok = 1;
+  check(resumed_ok, "extras: PTRACE_CONT from an entry stop runs on to the SIGSTOP");
+  if (ptrace(PT_SYSCALL, c, 0, 0) == 0 && wait_status(c, &st) && STOPPED(st) && STOPSIG(st) == (SIGTRAP_ | 0x80) && get_regs(c, regs))
+    next_ok = regs[ORIG_RAX] == SYS_getuid && regs[RAX] == (u64)-38;
+  check(next_ok, "extras: the next PTRACE_SYSCALL stop is the entry of getuid, not the exit of the earlier getpid");
+  ptrace(PT_CONT, c, 0, 0);
+  wait_status(c, &st);
+
+  // ---- a PTRACE_TRACEME that fails (the process is already traced) must not publish a tracer state file
+  int go[2], done[2];
+  sc1(SYS_pipe, go); sc1(SYS_pipe, done);
+  i64 d = sc1(SYS_fork, 0);
+  if (d == 0) {
+    char b = 0;
+    sc3(SYS_read, go[0], &b, 1);
+    i64 r = ptrace(PT_TRACEME, 0, 0, 0);
+    b = r < 0 ? 'F' : 'S';
+    sc3(SYS_write, done[1], &b, 1);
+    sc3(SYS_read, go[0], &b, 1);
+    sc1(SYS_exit_group, 0);
+  }
+  char sf[64]; state_file_path(sf, (u64)d);
+  if (ptrace(PT_SEIZE, d, 0, 0) != 0) {
+    out("SKIP: PTRACE_SEIZE of the second child refused (ptrace_scope), failing-TRACEME check not run\n");
+    char b = 'x'; sc3(SYS_write, go[1], &b, 1); sc3(SYS_write, go[1], &b, 1);
+  } else {
+    char b = 'g', r = 0;
+    sc3(SYS_write, go[1], &b, 1);
+    sc3(SYS_read, done[0], &r, 1);
+    check(r == 'F', "extras: PTRACE_TRACEME of an already traced process fails");
+    check(!file_exists(sf), "extras: a failed PTRACE_TRACEME leaves no /dev/shm state file");
+    sc3(SYS_write, go[1], &b, 1);
+  }
+  sc4(SYS_wait4, d, &st, 0x40000000, 0);
+  sc1(SYS_unlink, sf);
 }
 
 static void tracer(void) {
@@ -287,6 +357,8 @@ static void tracer(void) {
   i64 w = sc4(SYS_wait4, child, &status, 0x40000000, 0);
   check(w == child && (status & 0x7f) == 0 && ((status >> 8) & 0xff) == 7, "payload exits 7 (all in-tracee checks passed)");
   sc1(SYS_unlink, payload_path);
+
+  extras();
 
   out(failures ? "RESULT: FAIL\n" : "RESULT: PASS\n");
   sc1(SYS_exit_group, failures);
