@@ -22,10 +22,23 @@ if [ "$REPORT" -gt "$GUEST" ]; then
 fi
 OPTS="env EAC_LAUNCHERDIR=$EAC_DIR PROTON_EAC_RUNTIME='$RUNTIME' WINEDEBUG=-all PROTON_USE_XALIA=0 DXVK_CONFIG_FILE=$HERE/dxvk.conf $TOPO$* %command%"
 pgrep -x steam >/dev/null 2>&1 && { echo "close Steam first"; exit 1; }
+# Only the app block of 438100 is edited: the block is found by its key line and followed by brace depth, so another
+# app's LaunchOptions is never touched, and a VRChat block without one gets a LaunchOptions line added.
+set_options() {
+  OPTS="$OPTS" awk '
+    function emit() { printf "\t\t\t\t\t\"LaunchOptions\"\t\t\"%s\"\n", ENVIRON["OPTS"]; done = 1 }
+    inapp && $0 ~ /^[ \t]*\{[ \t]*$/ { d++; print; next }
+    inapp && $0 ~ /^[ \t]*\}[ \t]*$/ { d--; if (d == 0) { if (!done) emit(); inapp = 0 } print; next }
+    inapp && d == 1 && $0 ~ /^[ \t]*"LaunchOptions"[ \t]/ { emit(); next }
+    pending { pending = 0; if ($0 ~ /^[ \t]*\{[ \t]*$/) { inapp = 1; d = 1; done = 0; print; next } }
+    $0 ~ /^[ \t]*"438100"[ \t]*$/ { pending = 1 }
+    { print }
+  ' "$1"
+}
 for CF in "$STEAM"/userdata/*/config/localconfig.vdf; do
   [ -f "$CF" ] || continue
-  grep -q '"438100"' "$CF" || { echo "skip $CF (no VRChat entry yet: launch it once from Steam)"; continue; }
+  grep -Eq '^[[:space:]]*"438100"[[:space:]]*$' "$CF" || { echo "skip $CF (no VRChat entry yet: launch it once from Steam)"; continue; }
   cp "$CF" "$CF.bak-vrchat-fex-eac"
-  sed -i "/\"438100\"/,/\"LaunchOptions\"/s|\"LaunchOptions\"[[:space:]]*\".*\"|\"LaunchOptions\"\t\t\"$OPTS\"|" "$CF"
+  set_options "$CF.bak-vrchat-fex-eac" > "$CF.new" && mv "$CF.new" "$CF"
   echo "updated $CF"
 done
