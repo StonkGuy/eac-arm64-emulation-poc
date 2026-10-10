@@ -119,5 +119,5 @@ All tests build with the x86-64-target clang on any host; most also build native
   load). Run them the same way on both, and judge an intermittent test by its rate over many runs, never by one run.
 * A native result can also **correct** a FEX report: the `tf`/single-step trap storm, the signal-frame CS/SS values
   (`0x33`/`0x2b` native vs `0x30`/`0x00` under FEX) and the zero back-to-back RDTSC delta are confirmed by hardware,
-  an apparent `kernel32:process` regression turned out to be the test's own flakiness (same hang rate on stock FEX), while several claims that FEX was "wrong" about `int3`/`ud2` `si_code`
-  turned out to be the reports' own expectations and FEX matches the kernel.
+  an apparent `kernel32:process` regression is the test's own flakiness (same hang rate on stock FEX), and where a
+  report expects a different `int3`/`ud2` `si_code`, FEX matches the kernel.

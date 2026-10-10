@@ -87,9 +87,8 @@ renderer starts, inside the title's own anti-tamper. This is a record of where i
 * The bootstrapper spawns the game child, which runs Denuvo/Theia code and then loops in its own memory scan. The
   parent waits on the child indefinitely, and the game never loads a graphics module.
 * **The same stop happens on stock Proton Experimental** (11.0-20261001) with the stock Wine `ntdll.so`. It is therefore not caused by FEX or by the patches in this repository.
-* Two earlier hypotheses were tested and refuted: a Wine `sigsys_handler` `+0xb` defect (upstream's arithmetic is
-  correct for the trapped NT trampolines) and FEX's `NoExec` on the DRM preloader (the stop moves to the Theia trap
-  once the section is made executable).
+* Neither Wine's `sigsys_handler` (its `+0xb` arithmetic is correct for the trapped NT trampolines) nor FEX's `NoExec`
+  on the DRM preloader causes the stop: with that section made executable, the stop moves to the Theia trap.
 
 FEX's seccomp/SIGSYS path (patch 0010) and signal-frame validation (patch 0019) are faithful and covered by
 `tests/seccomp-trap` and `tests/signal-frame`, but they do not get this title past its anti-tamper.
