@@ -63,7 +63,7 @@ on an aarch64 machine that has a clang with the x86-64 target but no x86-64 link
 | `tests/sigreturn-eflags/build.sh [clang]` | Checks that `rt_sigreturn` applies EFLAGS a handler wrote while leaving RIP alone (patch 0016): a handler that sets DF resumes with DF set, one that sets TF starts single-stepping with exactly one SIGTRAP (how a debugger or Wine's `SetThreadContext` starts stepping). x86-64 only; run the same binary natively for the reference. |
 | `tests/maps-probe/build.sh [clang]` | Reads `/proc/self/maps` and probes every inaccessible (`---p`) mapping under a SIGSEGV handler, the way an anti-tamper scanner walks its address space: every probe must come back (fault delivered, or read allowed) and a faulting probe must report `si_addr` = the probed address. Under FEX the guest's maps also list FEX's own mappings, including the call/ret shadow-stack guard pages (patch 0023). A hang ends in `alarm()` with no RESULT line. x86-64 only; run the same binary natively for the reference. |
 | `tests/tf-iret/build.sh [clang]` | Checks where the single-step trap lands when TF is switched on (patch 0025): `POPFQ` (after the next instruction), `IRETQ` loading TF (after the first target instruction), Wine's syscall return `popfq; iretq` (on the IRETQ target itself), and single-stepping across a call and a return into code that has already run (one trap per instruction). 2000 repetitions each, so the translated code is cached and linked. x86-64 only; run the same binary natively for the reference. |
-| `tests/pop-fault/build.sh [clang]` | Checks that a faulting `pop` to memory leaves RSP unchanged (`popq (%rax)` into an unwritable page, differential against `mov %eax,(%rax)`, the handler resuming past the instruction the way `ntdll:exception` does). x86-64 only. **Passes only with the withdrawn patch 0021 ([patches.md](patches.md#f-signal-frames-and-faults--patches-00162020)), so it fails on the shipped series |
+| `tests/pop-fault/build.sh [clang]` | Checks that a faulting `pop` to memory leaves RSP unchanged (`popq (%rax)` into an unwritable page, differential against `mov %eax,(%rax)`, the handler resuming past the instruction the way `ntdll:exception` does). x86-64 only. **Passes only with the withdrawn patch 0021** ([patches.md](patches.md#f-signal-frames-and-faults--patches-00160020)), so it fails on the shipped series. |
 | `tests/seccomp-trap-noexec/build.sh [clang]` | Checks that a syscall a `SECCOMP_RET_TRAP` filter traps is never executed: a trapped `uname()` must leave its buffer untouched, an untrapped one fills it; 50 consecutive trapped calls stay suppressed. Run with `FEX_NEEDSSECCOMP=1`. Also `build.sh native`. |
 | `tests/signal-race/build.sh [clang]` | Two threads: one loops a trapped raw syscall (every call is a SIGSYS), the other hammers it with SIGUSR1 — the shape of Wine's `NtGetContextThread` against a thread in raw NT syscalls. Fails if the worker cannot be stopped afterwards (the hang signature). Run with `FEX_NEEDSSECCOMP=1`. Also `build.sh native`. |
 | `tests/bench/build.sh [clang] [output]` | Freestanding x86-64 micro-benchmarks: the code-churn invalidation cost (`EXTRA="-DINVAL_MODE=1 -DINVAL_THREADS=190"`, patch 0004) and the self-modifying-code fault modes (patch 0002). Generates its bytecode table with `gen_bigcode.py`. |
@@ -101,12 +101,13 @@ what makes the native `cpuid-fault` reference pass at all; a host without it wou
 | `restart-syscall` | PASS | SIGILL | PASS |
 | `signal-frame` | PASS | FAIL | PASS |
 | `sigreturn-eflags` | PASS | FAIL | PASS |
-| `pop-fault` | PASS | FAIL | PASS |
+| `pop-fault` | PASS | FAIL | FAIL (passes only with the withdrawn 0021) |
 | `maps-probe` | PASS | hang (timeout; measured on the 0001–0020 build, same code as stock) | PASS |
 | `tf-iret` | PASS | FAIL, checks 4–5 (measured on the 0001–0020 build, same code as stock) | PASS |
 
 The three columns ran the **same binaries** (built once, copied to the x86-64 box). Every test fails without the patch
-it names: the series was also built one patch at a time and each test flips from FAIL to PASS at its own patch.
+it names: the series was also built one patch at a time and each test flips from FAIL to PASS at its own patch
+(`pop-fault` excepted: its patch, 0021, is withdrawn).
 
 All tests build with the x86-64-target clang on any host; most also build natively (`build.sh native`), while
 `sigreturn-eflags` and `pop-fault` check x86 behaviour and are run natively as the same x86-64 binary. Two further notes for anyone extending the comparison:

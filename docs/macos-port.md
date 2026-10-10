@@ -11,7 +11,7 @@ macOS-libkrun guest; it does. Three sessions on 2026-10-08 all reached world ent
 | host VMM | [steamac](https://github.com/fxgl/steamac) 1.8.1/1.8.2: libkrun 1.19.6 on Hypervisor.framework | outside this repository |
 | guest | Valve's ARM64 SteamOS (Steam Frame image, stable 20260922.6101926), rootfs unmodified; Linux 7.2.9-steamac, 4 KB pages, 4 vCPUs (the M2's performance cores), 8 GB RAM | outside this repository |
 | graphics | Venus (virtio-gpu) -> virglrenderer -> KosmicKrisp -> Metal | outside this repository |
-| x86-64 translation | Steam's own FEX compatibility tool (Steam app 3127680) with Valve's FEX-2607-76-g37265b1 replaced by FEX-2610 + `patches/` (0001–0020), built in the guest with `-DBUILD_STEAM_SUPPORT=ON` | **our patch code** in `patches/`; the tool and Steam's swap mechanism are Valve's |
+| x86-64 translation | Steam's own FEX compatibility tool (Steam app 3127680) with Valve's FEX-2607-76-g37265b1 replaced by FEX-2610 + patches 0001–0020 from `patches/`, built in the guest with `-DBUILD_STEAM_SUPPORT=ON` | **our patch code** in `patches/`; the tool and Steam's swap mechanism are Valve's |
 | game | the Windows depot (build 25738324) under x86-64 Proton Experimental (Wine 11.0) | stock |
 
 Steam on ARM64 installs VRChat's Android build by default; forcing the compatibility tool to Proton Experimental
