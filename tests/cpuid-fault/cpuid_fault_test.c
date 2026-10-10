@@ -161,7 +161,7 @@ static void run(void) {
 
   // Turn CPUID faulting on for this thread: a CPU with the feature answers 0; without it, -ENODEV.
   i64 set0 = sc2(SYS_arch_prctl, ARCH_SET_CPUID, 0);
-  if (set0 == -38 /* ENODEV */) {
+  if (set0 == -19 /* ENODEV */) {
     out("SKIP: ARCH_SET_CPUID reports -ENODEV here; CPUID faulting cannot be exercised\n");
   } else {
     check(set0 == 0, "ARCH_SET_CPUID(0) returns 0");
