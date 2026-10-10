@@ -43,7 +43,7 @@ static inline i64 sc6(i64 nr, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f) {
   __asm__ volatile("svc 0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5) : "memory");
   return x0;
 }
-enum { SYS_read = 63, SYS_write = 64, SYS_open = 1024, SYS_close = 57, SYS_getpid = 172, SYS_clone = 220, SYS_wait4 = 260, SYS_prctl = 167, SYS_exit = 93, SYS_execve = 221, SYS_seccomp = 277, SYS_exit_group = 94 };
+enum { SYS_read = 63, SYS_write = 64, SYS_openat = 56, SYS_close = 57, SYS_getpid = 172, SYS_clone = 220, SYS_wait4 = 260, SYS_prctl = 167, SYS_exit = 93, SYS_execve = 221, SYS_seccomp = 277, SYS_exit_group = 94 };
 #else
 #error "x86-64 and aarch64 only"
 #endif
@@ -92,7 +92,11 @@ static void check(int ok, const char* what) {
 // leading blanks removed) into outval. Returns 0 on success, -1 if the file or the key was not found.
 static int status_value(const char* key, char* outval, u64 outsz) {
   static char buf[8192];
+#if defined(__x86_64__)
   i64 fd = sc3(SYS_open, (i64)"/proc/self/status", 0, 0);
+#else
+  i64 fd = sc4(SYS_openat, -100 /* AT_FDCWD */, (i64)"/proc/self/status", 0, 0);   // aarch64 has no open()
+#endif
   if (fd < 0) return -1;
   i64 n = sc3(SYS_read, fd, (i64)buf, sizeof(buf) - 1);
   sc1(SYS_close, fd);
