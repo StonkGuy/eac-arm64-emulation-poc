@@ -12,7 +12,7 @@
 //           already executed (the translator must notice), call a function inside the tracee by rewriting
 //           registers with a fake return address of 9 (SIGSEGV at rip=9), restore registers, PTRACE_DETACH.
 //
-// The same binary is both roles (argv[0] / environment select it). It is written to pass on native x86-64 Linux (not yet run there) and must pass under
+// The same binary is both roles (argv[0] / environment select it). It passes on native x86-64 Linux and must pass under
 // FEX; every check prints PASS/FAIL and the exit status is the number of failures.
 //
 // Register access is only emulated at the stops FEX itself produces (syscall entry/exit, guest int3/SIGSEGV), which is
@@ -192,7 +192,7 @@ static void tracer(void) {
   // ---- the payload starts: inspect and rewrite syscalls
   int did_getpid_rewrite = 0, did_uid_forge = 0, getpid_exit_ok = 0, ppid_exit_ok = 0, uid_seen = 0;
   u64 tracer_pid = (u64)sc1(SYS_getpid, 0);
-  int first_getpid_seen = 0;
+  int first_getpid_seen = 0, roundtrip_regset = 0, roundtrip_regs = 0;
   for (int i = 0; i < 200 && !(did_getpid_rewrite && did_uid_forge); ++i) {
     if (ptrace(PT_SYSCALL, child, 0, 0) != 0) break;
     if (!wait_status(child, &st) || !STOPPED(st)) break;
@@ -205,18 +205,26 @@ static void tracer(void) {
         did_getpid_rewrite = set_regs(child, regs);
         first_getpid_seen = 2;
       } else if (nr == SYS_getpid && !first_getpid_seen) {
+        // Unmodified round trip at entry: on Linux orig_rax selects the syscall and writing rax (-ENOSYS) back is a
+        // no-op, so getpid() must still run and return the child's pid (checked at its exit stop).
+        roundtrip_regset = set_regs(child, regs);
         first_getpid_seen = 1;
-      } else if (nr == SYS_getuid) { uid_seen = 1; }
+      } else if (nr == SYS_getuid && !uid_seen) {
+        u64 legacy[NREGS];                            // the same with the legacy PTRACE_GETREGS/SETREGS
+        roundtrip_regs = ptrace(PT_GETREGS, child, 0, (i64)legacy) == 0 && ptrace(PT_SETREGS, child, 0, (i64)legacy) == 0;
+        uid_seen = 1;
+      }
     } else {                                           // exit
       if (nr == SYS_getpid && first_getpid_seen == 1 && !getpid_exit_ok) getpid_exit_ok = regs[RAX] == (u64)child;
       else if ((nr == SYS_getppid || nr == SYS_getpid) && first_getpid_seen == 2 && !ppid_exit_ok) ppid_exit_ok = regs[RAX] == tracer_pid;
       if (nr == SYS_getuid && uid_seen) { regs[RAX] = 0x1234; did_uid_forge = set_regs(child, regs); }
     }
   }
-  check(getpid_exit_ok, "syscall exit stop returns the real result (getpid == child pid)");
+  check(roundtrip_regset && roundtrip_regs, "unmodified GETREGSET/SETREGSET and GETREGS/SETREGS round trips at entry accepted");
+  check(getpid_exit_ok, "syscall exit stop returns the real result (getpid == child pid) after an entry round trip");
   check(did_getpid_rewrite, "SETREGSET at entry accepted (getpid -> getppid)");
   check(ppid_exit_ok, "rewriting orig_rax/rax at syscall entry changes the syscall that runs");
-  check(did_uid_forge, "SETREGSET at exit stop accepted (forged rax)");
+  check(did_uid_forge, "SETREGSET at exit stop accepted (forged rax; getuid still ran after the GETREGS/SETREGS round trip)");
 
   // ---- breakpoint injection into already-translated code
   u64 bp = (u64)&breakpoint_target;

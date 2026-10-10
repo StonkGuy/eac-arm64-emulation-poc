@@ -12,7 +12,7 @@ concept — read "works" and "open" accordingly. The Works/Known limits below ar
   mapping` and the game never starts (0 of 4 launches, against 4 of 4 with it) ([patches.md](patches.md)).
 * The muvm default of performance cores only is the right VM size: adding two efficiency cores changes nothing
   measurable, adding four makes world loading almost twice as slow ([tuning.md](tuning.md#6-cpu-count-vm-cores-and-reported-cpus)).
-* `tests/ptrace-inject` passes (28 checks). `tests/signal-mask` and `tests/signal-regs` pass on a Linux kernel
+* `tests/ptrace-inject` passes (29 checks). `tests/signal-mask` and `tests/signal-regs` pass on a Linux kernel
   (aarch64 builds) and under the patched FEX in the VM; on stock FEX they fail ([signal-registers.md](signal-registers.md)).
 * **No Photon time-outs** with the signal-mask fix: 0 of 7 vs 4 of 7 control in the A/B, 0 in the 59 sessions run since
   (before the fix about one in two), and the Wine reproducer 0 of 6 vs 6 of 6 ([disconnects.md](disconnects.md)).

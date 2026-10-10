@@ -61,7 +61,7 @@ cd tests/ptrace-inject
 ./run-in-vm.sh              # throw-away muvm VM with the patched FEX registered for x86-64; must end with RESULT: PASS
 ```
 
-It performs the whole EAC-style injection conversation (28 checks). Under stock FEX (2609.1, or Fedora's 2604 package) it
+It performs the whole EAC-style injection conversation (29 checks). Under stock FEX (2609.1, or Fedora's 2604 package) it
 prints `PASS: fork` and then hangs: the tracer waits for a first `ptrace` stop that never comes.
 
 Two more freestanding tests check what a guest signal handler sees. Build them with clang (x86-64 binaries, to run under

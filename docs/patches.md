@@ -48,7 +48,7 @@ launcher uses (`GETREGS/SETREGS`, `GETREGSET/SETREGSET`, `PEEK*`/`POKE*` with co
 `GETSIGINFO`, `CONT`, `SYSCALL`, `DETACH`), and a `/proc/<pid>/exe` that names the guest binary. The full conversation
 is in [how-it-works.md](how-it-works.md).
 
-**Without it:** no anti-cheat session. **Verified by:** `tests/ptrace-inject` (28 checks, passes under FEX; the binary
+**Without it:** no anti-cheat session. **Verified by:** `tests/ptrace-inject` (29 checks, passes under FEX; the binary
 also targets native x86-64 Linux as the reference, see [tools.md](tools.md)). **Limits** (all off the launcher's path,
 none costs anything when unused): only the main thread of a tracee is traced; `PTRACE_ATTACH` to an already-running FEX
 process is not emulated; `PTRACE_SINGLESTEP` and `PTRACE_SEIZE`/`INTERRUPT`/`LISTEN` are passed to the host and do not
