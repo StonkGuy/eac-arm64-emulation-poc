@@ -14,8 +14,9 @@
 //      (arch/x86/kernel/traps.c do_debug -> exc_debug_user -> send_sigtrap)
 //   2. the frame's CS/SS. Linux writes __USER_CS = 0x33 and __USER_DS = 0x2b for 64-bit code (signal_64.c:123-126,
 //      231-233), which is what `mov %cs`/`mov %ss` return, and sigreturn forces CPL3 with `| 0x03` (signal_64.c:81-82).
-//   3. the frame's fpstate. With XSAVE advertised (CPUID leaf 0xD, XCR0 = 7) the fpstate is an XSAVE area: an
-//      FP_XSTATE_MAGIC1 header in sw_reserved, and FP_XSTATE_MAGIC2 at fpstate + xstate_size.
+//   3. the frame's fpstate. FP_XSTATE_MAGIC1 in sw_reserved with extended_size = xstate_size + 4; with XSAVE advertised
+//      (CPUID.1:ECX[26]) the fpstate is an XSAVE area with FP_XSTATE_MAGIC2 at fpstate + xstate_size, without it the
+//      512-byte FXSAVE area and no MAGIC2.
 //      (arch/x86/kernel/fpu/signal.c save_sw_bytes / save_xstate_epilog)
 //   4. ud2 reports SIGILL with si_code ILL_ILLOPN = 2, not ILL_ILLOPC. (traps.c handle_invalid_op)
 //   5. the frame's uc_sigmask: setup_rt_frame writes sigmask_to_save() and rt_sigreturn installs the sigset_t the
@@ -341,12 +342,21 @@ __attribute__((used)) static void entry_c(void) {
       u64 magic1 = *(volatile unsigned*)(fp + 464);
       u64 extended_size = *(volatile unsigned*)(fp + 468);
       u64 xstate_size = *(volatile unsigned*)(fp + 480);
-      u64 magic2 = 0;
-      if (xstate_size >= 512 && xstate_size <= 2500) magic2 = *(volatile unsigned*)(fp + xstate_size);
       check(magic1 == 0x46505853, "fpstate: FP_XSTATE_MAGIC1 is present in sw_reserved (+464)");
-      // The kernel writes FP_XSTATE_MAGIC2 at fpstate + user_size and sets extended_size = user_size + 4.
-      check(magic2 == 0x46505845, "fpstate: FP_XSTATE_MAGIC2 is present at fpstate + xstate_size");
+      // The kernel sets extended_size = user_size + 4 on every frame (save_sw_bytes).
       check(extended_size == xstate_size + 4, "fpstate: extended_size is xstate_size + 4");
+      unsigned c1_ecx;
+      __asm__ volatile("cpuid" : "=c"(c1_ecx) : "a"(1), "c"(0) : "ebx", "edx");
+      if (c1_ecx & (1u << 26)) {
+        // XSAVE: FP_XSTATE_MAGIC2 follows the user state, at fpstate + user_size (save_xstate_epilog).
+        u64 magic2 = 0;
+        if (xstate_size >= 512 && xstate_size <= 16384) magic2 = *(volatile unsigned*)(fp + xstate_size);
+        check(magic2 == 0x46505845, "fpstate: FP_XSTATE_MAGIC2 is present at fpstate + xstate_size");
+      } else {
+        // No XSAVE (FEX: FEX_HOSTFEATURES=disableavx): the 512-byte FXSAVE frame, no xsave header and no MAGIC2
+        // (save_xstate_epilog returns before writing them). sigreturn from this frame must still work.
+        check(xstate_size == 512, "fpstate: without XSAVE, xstate_size is the 512-byte FXSAVE area");
+      }
     }
   }
 #endif
