@@ -9,9 +9,9 @@
 // NtGetContextThread) that pair hangs the emulator: the worker spins forever and the main thread sleeps.
 //
 // In-process version: the worker loops one raw syscall from inside the trapped range (each iteration is trap -> SIGSYS
-// -> handler -> resume); the main thread hammers it with SIGUSR1. Both signals land on the same handler, which records
-// how many arrived and whether the interrupted ucontext RIP was the trapped syscall (i.e. the racing signal was taken
-// while the thread was inside FEX's seccomp/SIGSYS path). The test FAILS if, once the race is over, the worker cannot
+// -> handler -> resume); the main thread hammers it with SIGUSR1. Both signals land on the same handler, which counts
+// the SIGSYS traps and, for SIGUSR1 only, how many arrived and whether the interrupted ucontext RIP was the trapped
+// syscall's return point (i.e. the racing signal was taken while the thread was inside the seccomp/SIGSYS path). The test FAILS if, once the race is over, the worker cannot
 // be stopped -- the hang signature.
 //
 // The same source builds for x86-64 (run under FEX) and aarch64 (a real kernel carries the identical filter and signal
@@ -80,6 +80,11 @@ enum { CLONE_THREAD_FLAGS_X86 = 0x10F00, CLONE_THREAD_FLAGS_ARM = 0x10F00 };
 // ------------------------------------------------------------------------------------------------------
 static u64 slen(const char* s) { u64 n = 0; while (s[n]) ++n; return n; }
 static void out(const char* s) { sc3(SYS_write, 1, s, slen(s)); }
+static void outdec(u64 v) {
+  char b[24]; int n = 0;
+  do { b[23 - n++] = (char)('0' + v % 10); v /= 10; } while (v && n < 23);
+  sc3(SYS_write, 1, b + 24 - n, n);
+}
 static int failures;
 static void check(int ok, const char* what) {
   out(ok ? "PASS: " : "FAIL: "); out(what); out("\n"); if (!ok) ++failures;
@@ -95,7 +100,9 @@ static void check(int ok, const char* what) {
 __asm__(".section .safecode,\"awx\",@progbits\n.balign 16\n"
         ".globl rng_start\nrng_start:\n"
         ".balign 16\n.globl hsafe\nhsafe:\n"
-        "  mov g_gregs_off(%rip), %rcx\n"        // rdx = ucontext, gregs at +GREGS_OFF
+        "  cmp $10, %edi\n  je 4f\n"             // not SIGUSR1: the SIGSYS of a trap
+        "  incq h_sys(%rip)\n  ret\n"
+        "4:\n  mov g_gregs_off(%rip), %rcx\n"        // rdx = ucontext, gregs at +GREGS_OFF
         "  lea (%rdx, %rcx), %rcx\n"
         "  mov 128(%rcx), %rax\n"                // gregs[16] is RIP (16*8 = 128)
         "  mov %rax, h_rip(%rip)\n"
@@ -114,8 +121,8 @@ __asm__(".section .safecode,\"awx\",@progbits\n.balign 16\n"
         "  syscall\n"
         ".globl trapped_after\ntrapped_after:\n"
         "  leave\n  ret\n"
-        ".balign 8\n.globl h_count\n.globl h_in_probe\n.globl h_outside\n.globl h_rip\n.globl g_gregs_off\n"
-        "h_count: .quad 0\nh_in_probe: .quad 0\nh_outside: .quad 0\nh_rip: .quad 0\ng_gregs_off: .quad 0\n"
+        ".balign 8\n.globl h_count\n.globl h_in_probe\n.globl h_outside\n.globl h_rip\n.globl g_gregs_off\n.globl h_sys\n"
+        "h_count: .quad 0\nh_in_probe: .quad 0\nh_outside: .quad 0\nh_rip: .quad 0\ng_gregs_off: .quad 0\nh_sys: .quad 0\n"
         ".globl rng_end\nrng_end:\n"
         ".text\n");
 // spawn_thread is deliberately outside the trapped range: with the filter installed, a clone() issued from inside the
@@ -135,7 +142,9 @@ __asm__(".text\n.balign 16\n.globl spawn_thread\nspawn_thread:\n"      // i64(st
 __asm__(".section .safecode,\"awx\",@progbits\n.balign 16\n"
         ".globl rng_start\nrng_start:\n"
         ".balign 16\n.globl hsafe\nhsafe:\n"
-        "  adr x6, g_gregs_off\n  ldr x6, [x6]\n"     // x2 = ucontext, gregs at +GREGS_OFF
+        "  cmp w0, #10\n  b.eq 4f\n"                  // not SIGUSR1: the SIGSYS of a trap
+        "  adr x5, h_sys\n  ldr x7, [x5]\n  add x7, x7, #1\n  str x7, [x5]\n  ret\n"
+        "4:\n  adr x6, g_gregs_off\n  ldr x6, [x6]\n"     // x2 = ucontext, gregs at +GREGS_OFF
         "  add x6, x2, x6\n"
         "  ldr x7, [x6, #256]\n"                      // regs[32] is PC (32*8 = 256)
         "  adr x5, h_rip\n  str x7, [x5]\n"
@@ -150,8 +159,8 @@ __asm__(".section .safecode,\"awx\",@progbits\n.balign 16\n"
         "  mov x9, x0\n  mov x0, x1\n  mov x1, x2\n  mov x2, x3\n  mov x3, x4\n  mov x4, x5\n  mov x5, x6\n"
         "  mov x8, x9\n  svc 0\n"
         ".globl trapped_after\ntrapped_after:\n  ret\n"
-        ".balign 8\n.globl h_count\n.globl h_in_probe\n.globl h_outside\n.globl h_rip\n.globl g_gregs_off\n"
-        "h_count: .quad 0\nh_in_probe: .quad 0\nh_outside: .quad 0\nh_rip: .quad 0\ng_gregs_off: .quad 0\n"
+        ".balign 8\n.globl h_count\n.globl h_in_probe\n.globl h_outside\n.globl h_rip\n.globl g_gregs_off\n.globl h_sys\n"
+        "h_count: .quad 0\nh_in_probe: .quad 0\nh_outside: .quad 0\nh_rip: .quad 0\ng_gregs_off: .quad 0\nh_sys: .quad 0\n"
         ".globl rng_end\nrng_end:\n"
         ".text\n");
 // spawn_thread is deliberately outside the trapped range: a clone() issued from inside the range would itself be
@@ -173,7 +182,7 @@ extern unsigned char rng_start[], rng_end[], trapped_after[];
 extern void hsafe(void);
 extern i64 trapped_probe(i64 nr, i64 a, i64 b, i64 c, i64 d, i64 e, i64 f);
 extern i64 spawn_thread(u64 stacktop, void (*fn)(void));
-extern volatile u64 h_count, h_in_probe, h_outside, h_rip, g_gregs_off;
+extern volatile u64 h_count, h_in_probe, h_outside, h_rip, g_gregs_off, h_sys;
 
 // filter: trap a syscall whose instruction pointer is inside [rng_start, rng_end) and whose arch matches.
 struct sock_filter { unsigned short code; unsigned char jt, jf; unsigned int k; };
@@ -257,14 +266,20 @@ __attribute__((used)) static void entry_c(void) {
   check(w_started, "the worker thread started");
 
   i64 pid = sc2(SYS_getpid, 0, 0);
-  const int rounds = 40000;
+#ifndef RACE_ROUNDS
+#define RACE_ROUNDS 40000   // -DRACE_ROUNDS=0 is the negative control: no racing signal, the race checks must FAIL
+#endif
+  const int rounds = RACE_ROUNDS;
   for (int i = 0; i < rounds; ++i)
     sc3(SYS_tgkill, pid, tid, SIGUSR1);           // racing signal while the worker is in its trap loop
 
   u64 h_at_race_end = h_count;
   u64 in_probe = h_in_probe;
+  check(h_sys > 0, "the trapped syscalls delivered SIGSYS");
   check(h_at_race_end > 0, "the racing signals were handled");
-  check(in_probe > 0, "a racing signal was taken while the worker was in the seccomp/SIGSYS path");
+  // Informational only: whether a SIGUSR1 lands exactly on the trap's return point is timing (a real kernel shows
+  // 0 in roughly one run in eight), so it is reported, not checked.
+  out("info: racing signals taken at the trapped syscall's return point: "); outdec(in_probe); out("\n");
 
   // Stop the worker. If the race wedged the emulator's signal/seccomp state (the repro's hang), it never observes
   // w_stop and this bounded wait expires -- the failure this test exists to catch.
