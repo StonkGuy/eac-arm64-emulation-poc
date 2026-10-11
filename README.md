@@ -50,7 +50,7 @@ needed to run; 0008 and 0010 are correctness fixes in the same area, the rest is
 | 0003/0005/0006/0009 | **diagnostics** | stats, sampler and thread snapshot (0009 adds the futex word to the snapshot) — tools, not fixes |
 | 0011–0020 kernel fidelity | fidelity | the answers a real kernel gives on `arch_prctl` (0011), the debug registers (0012), `/proc/<pid>/status` (0013), unknown regsets (0014), `restart_syscall` (0015) and the signal frame (0016–0020). Not on VRChat's path; a title or Wine observes them |
 | 0022–0026 second wave | fidelity | host-stack leak per seccomp trap (0022), guest reads of FEX's call/ret shadow-stack guard pages (0023), TF trap on the IRETQ target (0025), the signal alt stack while a thread exits on it (0026); 0024 is a profiler option. Found on a second title (THE FINALS) whose anti-tamper bootstrapper observes them; trap-, fault- and exit-path only |
-| 0033 `/proc/<pid>/maps` | fix | the maps file lists only the emulated process's mappings (below 2^47), not FEX and its AArch64 host libraries. Without it an EAC launcher module that injects into a library it picks from the child's maps chose a host library and failed with `210 Unexpected error. (#1)` (seen on Mini Royale via Proton; VRChat's module was unaffected) |
+| 0033 `/proc/<pid>/maps` | fix | the maps file lists only the emulated process's mappings (below 2^47), not FEX and its AArch64 host libraries. Without it an EAC launcher module that injects into a library it picks from the child's maps chose a host library and failed with `210 Unexpected error. (#1)` (seen on Mini Royale via Proton; VRChat's deployment still serves an older module that is not affected yet) |
 
 ## What is changed where
 

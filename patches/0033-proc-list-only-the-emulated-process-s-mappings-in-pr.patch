@@ -14,16 +14,23 @@ to the emulated process it lists FEX itself, the AArch64 host libraries
 (ld-linux-aarch64.so.1, libc.so.6, libstdc++.so.6, ...), the host vdso and
 FEX's own reservations, all at or above 2^47.
 
-The Easy Anti-Cheat launcher module served to some deployments (it follows
-the deployment, not the bootstrapper version: 1.9.3 and 1.9.4 alike) reads
-/proc/<child>/maps of the child it traces, picks a library mapping from
-it, PEEKDATAs its ELF image and injects a call into the child (the "/proc/self/fd/3" client load). Under FEX it picked a
-mapping in the host range (0xffff9386....), the injected call stopped with
-SIGSEGV, the launcher passed the signal on, the child died and the launcher
-reported "Launcher finished with: 210, 'Unexpected error. (#1)'" about 3 s
-after "Starting Wine module mapping". The module served to VRChat's
-deployment picked an x86-64 mapping (0x7ffff7....) and was not affected.
-With the host lines gone both inject successfully (301).
+The current Easy Anti-Cheat launcher module injects its client at the
+child's first ld.so syscall, before the guest's own libc is mapped. It
+finds the library to call into by name ("libc.so.6") in /proc/<child>/maps,
+resolves a function there through PTRACE_PEEKDATA and injects the call (the
+"/proc/self/fd/3" client load). Under FEX the only libc.so.6 in the file at
+that point is FEX's AArch64 one (0xffff9386.... in one run): the injected
+call faults, the launcher passes the SIGSEGV on, the child dies and the
+launcher reports "Launcher finished with: 210, 'Unexpected error. (#1)'"
+about 3 s after "Starting Wine module mapping". Which module a title gets
+follows its deployment, not the bootstrapper version (1.9.3 and 1.9.4
+alike): Mini Royale's deployment serves the current module; VRChat's
+deployment still served an older one that injects after the guest libc is
+mapped, so it was not affected yet. With the host lines gone both inject
+successfully (301). The same bug and fix were found independently by
+yungtry (github.com/yungtry/steamac, branch fex-eac, patch 0027, with
+Goose Goose Duck); that version filters only a FEX tracee's maps as read
+by its tracer, this one every maps file, including /proc/self/maps.
 
 Add a creator for /proc/<pid>/maps (any pid, including self) that passes the
 host file through and drops only the lines that start at or above

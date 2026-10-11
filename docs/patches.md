@@ -226,7 +226,10 @@ limits, all off VRChat's path:
 * **0033** — the `/proc/<pid>/maps` creator is **our patch code**; it runs only when a guest opens a maps file.
   `smaps`, `smaps_rollup`, `numa_maps`, `task/<tid>/maps` and `map_files/` are still the host's, and FEX's own
   reservations below 2^47 stay listed. Verified live: Mini Royale (Windows build via Proton) went from 210 to 301;
-  VRChat stays at 301 and joins a world. The native result is derived from kernel source
+  VRChat stays at 301 and joins a world. The current EAC launcher module looks `libc.so.6` up by name before the
+  guest's libc is mapped, so every title whose deployment serves that module needs 0033; VRChat's deployment still
+  served the older one. Found independently by yungtry (patch 0027 in `yungtry/steamac`, branch `fex-eac`, which
+  filters only a tracee's maps as read by its tracer). The native result is derived from kernel source
   (`page_64_types.h`, `fs/proc/task_mmu.c`); a bare-metal reference run is still to do.
 
 ---
