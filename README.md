@@ -11,9 +11,9 @@ problems.
 ![VRChat running on an Apple M2 under Fedora Asahi Remix through the patched FEX-Emu, beside a `fastfetch` of the host](docs/img/vrchat-m2.png)
 
 It is deliberately **one game on one SoC** (VRChat on an Apple M2: developed under Fedora Asahi Remix inside a [muvm](https://github.com/AsahiLinux/muvm)
-micro-VM, and also verified on macOS, see below). Treat it as a starting point. **Fork it and take it further** — another game, another SoC, another
-host. Nothing here is submitted to, or a proposal for, the FEX or Proton projects;
-see [Not a contribution](#not-a-contribution).
+micro-VM, and also verified on macOS, see below). Treat it as a starting point and take it further — another game, another SoC, another
+host — but please report bugs you find here rather than only fixing them in a fork; see
+[Bugs and upstreaming](#bugs-and-upstreaming).
 
 **macOS.** The same patched FEX also runs VRChat with genuine EAC on an Apple M2 MacBook Air under macOS 27, inside
 the [steamac](https://github.com/fxgl/steamac) libkrun guest (Valve's ARM64 SteamOS, Steam's own FEX compatibility tool
@@ -118,17 +118,21 @@ open: [docs/status.md](docs/status.md).
   at any time and enforcement is their call. Use at your own risk, and never run modified clients. Never attach a
   debugger or `perf` to the running game: EAC reports it.
 
-## Not a contribution
+## Bugs and upstreaming
 
-The changes are kept here as patch files so the setup can be reproduced on one machine. They are **not offered to the
-FEX project or to Proton**, and this repository is not affiliated with either. If any part is worth upstreaming, that
-is for someone to do from a fork, with their own testing and reasoning.
+**Found a bug, or a place where the patched FEX still behaves differently from x86-64 Linux? Please report it here**
+(an issue, or a pull request with a test) instead of carrying a fix only in your own fork, so everyone gets it and the
+test suite covers it.
+
+This repository does not send patches to FEX-Emu, Proton or steamac itself and is not affiliated with them. If you have
+reviewed a patch and think it is good enough for upstream, **you are welcome to submit it there yourself**: keep its
+test with it, follow the upstream project's own process, and mention where it came from.
 
 ## Other EAC games and FEX hosts
 
 The Proton EAC runtime is the same launcher/client machinery for every game that ships Linux EAC, so the `ptrace` work
-is not VRChat-specific; each game still has its own EAC build, integrity checks and server-side policy. Only VRChat has
-been tried. Besides Asahi and the macOS guest above, other FEX hosts (for instance Valve's Steam Frame) are untested — see [docs/other-platforms.md](docs/other-platforms.md).
+is not VRChat-specific; each game still has its own EAC build, integrity checks and server-side policy. VRChat is
+verified end to end; Mini Royale's EAC launcher reaches `301` with 0033 (the game itself was not played). Besides Asahi and the macOS guest above, other FEX hosts (for instance Valve's Steam Frame) are untested — see [docs/other-platforms.md](docs/other-platforms.md).
 
 ## License
 
