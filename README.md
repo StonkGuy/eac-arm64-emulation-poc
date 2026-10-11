@@ -118,16 +118,24 @@ open: [docs/status.md](docs/status.md).
   at any time and enforcement is their call. Use at your own risk, and never run modified clients. Never attach a
   debugger or `perf` to the running game: EAC reports it.
 
-## Bugs and upstreaming
+## Bugs, fixes and upstreaming
 
-**Found a bug, or a place where the patched FEX still behaves differently from x86-64 Linux? Please report it here**
-(an issue, or a pull request with a test) instead of carrying a fix only in your own fork, so everyone gets it and the
-test suite covers it.
+**Found a bug, or a place where the patched FEX still behaves differently from x86-64 Linux?** Please report it here as
+an issue. If you have already fixed it in your own fork, please consider opening a pull request here too (with a test),
+so everyone gets the fix and the test suite covers it.
 
-This repository does not send patches to FEX-Emu or Proton itself and is not affiliated with them (steamac changes
-are discussed with its maintainer directly). If you have
-reviewed a patch and think it is good enough for upstream, **you are welcome to submit it there yourself**: keep its
-test with it, follow the upstream project's own process, and mention where it came from.
+This repository does not send patches to FEX-Emu or Proton itself and is not affiliated with them (steamac changes are
+discussed with its maintainer directly). If you have reviewed a patch and think it is good enough for upstream, **you
+are welcome to submit it there yourself**: keep its test with it, follow the upstream project's own process, and
+mention where it came from. The same applies to the other patched components (libkrun, Mesa/KosmicKrisp,
+virglrenderer, DXMT), unless that project's own rules say otherwise — DXMT, for example, does not accept AI-assisted
+contributions.
+
+## Maintenance and support
+
+I will try to keep the patched components up to date with their upstream releases, re-running the regression tests on
+every update, and to drop any patch once upstream covers its behaviour. For game-specific problems I will try to help
+where I can, but I cannot guarantee that every game, or every fix, will work.
 
 ## Other EAC games and FEX hosts
 
