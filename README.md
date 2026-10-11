@@ -13,7 +13,7 @@ problems.
 It is deliberately **one game on one SoC** (VRChat on an Apple M2: developed under Fedora Asahi Remix inside a [muvm](https://github.com/AsahiLinux/muvm)
 micro-VM, and also verified on macOS, see below). Treat it as a starting point and take it further — another game, another SoC, another
 host — but please report bugs you find here rather than only fixing them in a fork; see
-[Bugs and upstreaming](#bugs-and-upstreaming).
+[Bugs, fixes and upstreaming](#bugs-fixes-and-upstreaming).
 
 **macOS.** The same patched FEX also runs VRChat with genuine EAC on an Apple M2 MacBook Air under macOS 27, inside
 the [steamac](https://github.com/fxgl/steamac) libkrun guest (Valve's ARM64 SteamOS, Steam's own FEX compatibility tool
