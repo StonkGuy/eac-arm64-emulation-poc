@@ -46,7 +46,7 @@ In Steam:
 ## 3. Build the patched FEX
 
 ```sh
-scripts/build-fex.sh            # clones StonkGuy/FEX at tag eac-2610.1 (FEX-2610 14c9268 + the patches) into work/FEX, builds Release
+scripts/build-fex.sh            # clones StonkGuy/FEX at tag eac-2610.2 (FEX-2610 14c9268 + the patches) into work/FEX, builds Release
 scripts/vm/install-overlay.sh   # copies the binary to ~/.local/share/vrchat-fex-eac/fex/FEX
 ```
 

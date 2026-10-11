@@ -1,12 +1,12 @@
 # The patch series
 
-Twenty-six patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
+Twenty-seven patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
 (`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610; 0022–0026 on top of 0001–0020
-(`0021` is withdrawn, see below); 0033 was added on top of 0026. They are not all the same kind of thing, so they are
+(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026. They are not all the same kind of thing, so they are
 grouped here by what they are for.
 
 **Where the code lives.** Each patch is one commit on branch `eac-2610` of [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) (release tag
-`eac-2610.1`), and every test named below is in that branch's
+`eac-2610.2`), and every test named below is in that branch's
 [`eac-tests/`](https://github.com/StonkGuy/FEX/tree/eac-2610/eac-tests). `patches/` here is a generated snapshot of
 those commits; send changes to the fork.
 
@@ -16,7 +16,7 @@ The groups:
 |---|---|---|
 | **A. Faithful `ptrace`** | 0001 | the change that lets the anti-cheat launcher inject its client at all |
 | **B. Signal fidelity** | 0007, 0008, 0010 | guest signal handlers must behave like Linux; **0007** is what fixed the disconnects (0008 is a correctness fix in the same area, 0010 the seccomp/SIGSYS path) |
-| **C. Code-invalidation cost** | 0002, 0004 | 0002: without it the anti-cheat client never finishes loading; 0004: performance with ~200 threads |
+| **C. Code-invalidation cost and self-modifying code** | 0002, 0004, 0035 | 0002: without it the anti-cheat client never finishes loading; 0004: performance with ~200 threads; 0035: a page the guest makes writable stays writable for other processes (The Division 2) |
 | **D. Diagnostics** | 0003, 0005, 0006, 0009 | **not fixes** — tools that made the bugs visible without ptrace |
 | **E. Kernel-fidelity gaps** | 0011, 0012, 0013, 0014, 0015, 0033 | the answers a real kernel gives for `arch_prctl`, the debug registers, `/proc/<pid>/status`, unknown regsets, `restart_syscall` and `/proc/<pid>/maps` |
 | **F. Signal frames and faults** | 0016–0020 | what Windows exception handling under Wine reads from and writes to a signal frame |
@@ -143,7 +143,7 @@ runs a trapped syscall with `SIGSYS` blocked.
 
 ---
 
-## C. Code-invalidation cost — patches 0002, 0004
+## C. Code-invalidation cost and self-modifying code — patches 0002, 0004, 0035
 
 VRChat runs with ~200 guest threads and the injected anti-cheat client toggles page protections constantly, so FEX's
 code-range invalidation path is hot.
@@ -175,6 +175,40 @@ behaviour) the anti-cheat launcher stopped at `Starting Wine module mapping`, ga
 game never started, in every launch (0 of 4); with the patch active every launch reached a world (4 of 4, 26–34 s).
 The fault storm is not a slowdown but a wall while the client is mapped. Once in a world, frame rates matched the
 other sessions, so the patch's own cost (the per-instruction check on hot pages) does not show.
+
+### 0035 — code pages the guest makes writable stay writable for other processes
+
+**Reasoning.** On Linux a page a process has mapped writable can be written by another process:
+`process_vm_writev()` reaches it with `FOLL_WRITE` and without `FOLL_FORCE`, which succeeds exactly when the VMA is
+writable. Under `SMCChecks=mtrack` FEX write-protects the host page of guest code it has translated; the guest's own
+writes fault into FEX and resume, but a write from another process takes no fault and fails with `EFAULT`.
+`mprotect(RWX)` restores the protection, yet the next translation from the page protects it again. Wine's
+`NtWriteVirtualMemory` is wineserver's `process_vm_writev`, so a hook written that way fails with `STATUS_PARTIAL_COPY`
+although the guest made the page writable.
+
+**What it does.** `GuestMprotect` notes the executable, non-writable pages of a request that makes them writable and
+executable (at most 64 pages) and declares them hot after `TrackMprotect` (`SMCHotPages::MarkHot`, the mechanism of
+0002). Hot pages keep the protection the guest asked for and the JIT verifies their code instead; the invalidation that
+follows drops code translated before. The page walk runs only for an `mprotect` that asks for `PROT_WRITE|PROT_EXEC`.
+The hot-page mechanism is **our patch code** (0002); `SMCChecks` is a stock option.
+
+**Consumer.** The Division 2's protector hooks ntdll with `NtProtectVirtualMemory(PAGE_EXECUTE_READWRITE)` followed by
+`NtWriteVirtualMemory`; the write failed, the game reported "Error at hooking API NtProtectVirtualMemory" and exited
+before opening a window. Based on yungtry's patch 0028 (`yungtry/steamac`, branch `fex-eac`).
+
+**Test.** `eac-tests/smc-remote-write` (in the tag).
+
+**Status and limits.** The native result is derived from kernel source (`mm/process_vm_access.c`); a bare-metal run of
+the test is still pending, and it has not been played on The Division 2 here.
+
+* Only with `SMCChecks=mtrack` (the default) and `SMCHotPageFaults != 0`.
+* Pages that were already writable and executable before code ran from them are not covered (no RX to RWX transition
+  is seen).
+* At most 64 pages per request, and only while the hot set has room (3/4 of its 2048 slots); other pages keep plain
+  write protection. A page made hot stays hot for the life of the process.
+* `MarkGuestExecutableRange` checks `IsHot` before it takes the VMA lock, so a translation racing with the `mprotect`
+  can write-protect the page once; the guest's own writes still work then, a remote write fails until the next
+  invalidation.
 
 ---
 

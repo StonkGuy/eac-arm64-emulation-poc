@@ -1,0 +1,118 @@
+From 304475322b9b04493e35ef9690d2489bcda80a35 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 16:01:09 +0300
+Subject: [PATCH] SMC: code pages the guest makes writable stay writable for
+ other processes
+
+On Linux a page the process has mapped writable can be written by another
+process: process_vm_writev() reaches it through pin_user_pages_remote() with
+FOLL_WRITE and without FOLL_FORCE (mm/process_vm_access.c), which succeeds
+exactly when the VMA is writable.
+
+Under SMCChecks=mtrack FEX write-protects the host page of guest code it has
+translated. That only works for writes the guest makes itself: they fault into
+FEX, which unprotects, invalidates and resumes. A write from another process
+takes no fault and fails with EFAULT. mprotect(RWX) does restore the host
+protection, but the next translation from the page (any thread running code
+there, e.g. on a hooked ntdll page) write-protects it again. Wine's
+NtWriteVirtualMemory is wineserver's process_vm_writev, so a hook written that
+way fails with STATUS_PARTIAL_COPY although the guest made the page writable.
+
+GuestMprotect now notes the executable, non-writable pages of a request that
+makes them writable and executable (at most 64 pages) and, after
+TrackMprotect, declares them hot (SMCHotPages::MarkHot, the mechanism of patch
+0002). Hot pages keep the protection the guest asked for and the JIT verifies
+their code instead; the invalidation that follows drops the code translated
+before, which had no such check. The common path is unchanged: the page walk
+runs only for an mprotect that asks for PROT_WRITE|PROT_EXEC.
+
+Consumer: The Division 2's protector hooks ntdll with
+NtProtectVirtualMemory(PAGE_EXECUTE_READWRITE) followed by
+NtWriteVirtualMemory; the write failed, it reported "Error at hooking API
+NtProtectVirtualMemory" and the game exited before opening a window.
+
+Limits: only with SMCChecks=mtrack (the default) and SMCHotPageFaults != 0.
+Pages that were already writable and executable before code ran from them are
+not covered (no RX->RWX transition is seen), nor are requests over 64 pages or
+pages beyond the hot set's capacity (3/4 of 2048 slots); those keep plain write
+protection. MarkGuestExecutableRange checks IsHot before it takes the VMA
+lock, so a translation racing with the mprotect can still write-protect the
+page once; the guest's own writes still work then (they fault), a remote
+write until the next invalidation does not. A page made hot stays hot for the
+life of the process.
+
+Based on yungtry's patch 0028 (github.com/yungtry/steamac, fex-eac).
+
+Base: FEX-2610 14c92681 + eac-2610.1.
+Upstream: FEX main 14c92681 (2026-10-07) has no equivalent; GuestMprotect
+there is unchanged and mtrack has no hot-page mechanism.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxSyscalls/SMCHotPages.h               |  6 +++++
+ .../LinuxSyscalls/SyscallsSMCTracking.cpp     | 26 +++++++++++++++++++
+ 2 files changed, 32 insertions(+)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SMCHotPages.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/SMCHotPages.h
+index 42f51c2..d46b7ea 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SMCHotPages.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SMCHotPages.h
+@@ -53,6 +53,12 @@ public:
+     return (New & CountMask) == FaultThreshold && MakeHot(Page);
+   }
+ 
++  /// Declares the page containing `Address` hot without waiting for faults. Returns false when it already was hot or the
++  /// set is full (the page then stays on plain write protection).
++  bool MarkHot(uint64_t Address) {
++    return MakeHot(Address >> PageShift);
++  }
++
+   /// True if the page containing `Address` is hot.
+   bool IsHot(uint64_t Address) const {
+     if (HotCount.load(std::memory_order_relaxed) == 0) {
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+index ffbb492..f74dfeb 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+@@ -502,12 +502,38 @@ uint64_t SyscallHandler::GuestMprotect(FEXCore::Core::InternalThreadState* Threa
+ 
+   {
+     auto lk = FEXCore::GuardSignalDeferringSection(VMATracking.Mutex, Thread);
++
++    // Code pages the guest unlocks for patching (executable and not writable, made writable and executable: the
++    // VirtualProtect(PAGE_EXECUTE_READWRITE) a hook installer issues before it writes a jump) become SMC-hot. A
++    // write-protected code page only works for writes the guest makes itself, which fault into FEX; a write that
++    // arrives from another process (Wine's NtWriteVirtualMemory is wineserver's process_vm_writev, and so are
++    // debuggers and injectors) takes no fault and fails with EFAULT on the host's read-only page, although the guest
++    // made the page writable. Hot pages keep the protection the guest asked for and the JIT verifies their code
++    // instead; the invalidation below drops the code translated before, which had no such check.
++    fextl::vector<uint64_t> UnlockedCode;
++    constexpr uint64_t MaxUnlockedCodePages = 64;
++    const auto Base = reinterpret_cast<uint64_t>(addr) & FEXCore::Utils::FEX_PAGE_MASK;
++    const auto Top = FEXCore::AlignUp(reinterpret_cast<uint64_t>(addr) + len, FEXCore::Utils::FEX_PAGE_SIZE);
++    if (SMCChecks == FEXCore::Config::CONFIG_SMC_MTRACK && SMCHotPageFaults() && (prot & PROT_WRITE) && (prot & PROT_EXEC) &&
++        Top > Base && (Top - Base) / FEXCore::Utils::FEX_PAGE_SIZE <= MaxUnlockedCodePages) {
++      for (auto Page = Base; Page < Top; Page += FEXCore::Utils::FEX_PAGE_SIZE) {
++        auto Entry = VMATracking.FindVMAEntry(Page);
++        if (Entry != VMATracking.VMAs.end() && Entry->second.Prot.Executable && !Entry->second.Prot.Writable) {
++          UnlockedCode.push_back(Page);
++        }
++      }
++    }
++
+     Result = ::mprotect(addr, len, prot);
+     if (Result == -1) {
+       return -errno;
+     }
+ 
+     TrackMprotect(Thread, addr, len, prot);
++
++    for (auto Page : UnlockedCode) {
++      SMCHotPages.MarkHot(Page);
++    }
+   }
+ 
+   InvalidateCodeRangeIfNecessary(Thread, reinterpret_cast<uint64_t>(addr), len, false);
+-- 
+2.39.5 (Apple Git-154)
+

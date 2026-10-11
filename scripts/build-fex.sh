@@ -13,8 +13,8 @@ set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${WORK:-$REPO/work}
 FEX_REPO=https://github.com/StonkGuy/FEX.git
-FEX_EAC_TAG=eac-2610.1
-FEX_EAC_SHA=e3cbe03645c73c9d53a0c87ec25acecca5ba2555
+FEX_EAC_TAG=eac-2610.2
+FEX_EAC_SHA=cc1cc2a14da9f2e844f5b2b2b5bec3db237bb836
 JOBS=${JOBS:-$(nproc)}
 CC=${CC:-clang}; CXX=${CXX:-clang++}
 
