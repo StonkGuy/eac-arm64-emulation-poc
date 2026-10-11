@@ -14,4 +14,4 @@ not Asahi-specific. Everything else in this repository (muvm scripts, host tunin
 | Any arm64 Linux with 4K pages + FEX | **untested** | `scripts/build-fex.sh`, then register the patched binary with binfmt_misc. |
 | macOS on Apple silicon | **tested** (M2 MacBook Air, macOS 27.0) | The steamac libkrun guest (Valve's ARM64 SteamOS) with the patched FEX swapped into Steam's FEX compatibility tool; EAC `301`, Session Begin and world entry in three sessions. See [macos-port.md](macos-port.md). Other Macs untested. |
 
-If you try one of these, `tests/ptrace-inject` is the quickest check that the emulation behaves; please report results.
+If you try one of these, `eac-tests/ptrace-inject` is the quickest check that the emulation behaves; please report results.

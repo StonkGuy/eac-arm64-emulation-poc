@@ -22,7 +22,7 @@ bytes) and stays full while the render loop keeps running; in wineserver, the ep
 `EPOLLERR|EPOLLHUP` only (it was armed for read when a receive was pending) with data still queued, so the pending receive
 completion is never delivered to the client thread. The cause is FEX running guest signal handlers with the wrong signal
 mask, which loses that wake-up when Wine suspends and resumes threads. Check that you run the patched FEX with the default
-`FEX_SIGNALMASKFIX` (not `=0`); `tests/signal-mask` tells you in a second. Evidence, the reproducer and how to capture a wedge:
+`FEX_SIGNALMASKFIX` (not `=0`); `eac-tests/signal-mask` tells you in a second. Evidence, the reproducer and how to capture a wedge:
 [disconnects.md](disconnects.md).
 
 **The game freezes at start-up, before "Destination set"** (main thread asleep, no CPU use, the log silent for ~60 s).
@@ -38,7 +38,7 @@ and the start-up burst starves it until a ~60 s timeout. Check that the launch o
 usually gets through.
 Details: [disconnects.md](disconnects.md#the-pre-join-stall-il2cpp-thread-pool-starvation).
 
-**EAC launcher fails (`Unexpected error. (#1)` etc.).** Run `tests/ptrace-inject` first. If it fails, FEX is not the
+**EAC launcher fails (`Unexpected error. (#1)` etc.).** Run `eac-tests/ptrace-inject` first. If it fails, FEX is not the
 patched build (note that binfmt handlers pin the interpreter inode: restart the VM after installing a new FEX).
 Never leave `WINEDEBUG` trace channels or extra FEX debug settings on while testing EAC: they change timing and have
 crashed the game.

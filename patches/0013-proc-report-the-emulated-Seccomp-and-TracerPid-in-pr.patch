@@ -1,7 +1,7 @@
-From e1aaec81cfad1267d96e686c66e6d3e9f48dbcbb Mon Sep 17 00:00:00 2001
+From 915aca605d91eaad3ad2b89ab643a3698063ec7d Mon Sep 17 00:00:00 2001
 From: build <build@invalid>
 Date: Thu, 8 Oct 2026 20:37:02 +0300
-Subject: [PATCH 13/15] proc: report the emulated Seccomp: and TracerPid: in
+Subject: [PATCH] proc: report the emulated Seccomp: and TracerPid: in
  /proc/<pid>/status
 
 A real kernel's /proc/<pid>/status describes that process: Seccomp: is its own
@@ -30,7 +30,7 @@ Base: FEX-2610 14c92681 + patches 0001-0010.
  6 files changed, 94 insertions(+), 2 deletions(-)
 
 diff --git a/Source/Tools/FEXInterpreter/FEXInterpreter.cpp b/Source/Tools/FEXInterpreter/FEXInterpreter.cpp
-index 52bdba1e6..20564c37a 100644
+index 52bdba1..20564c3 100644
 --- a/Source/Tools/FEXInterpreter/FEXInterpreter.cpp
 +++ b/Source/Tools/FEXInterpreter/FEXInterpreter.cpp
 @@ -595,8 +595,10 @@ int main(int argc, char** argv, char** const envp) {
@@ -47,7 +47,7 @@ index 52bdba1e6..20564c37a 100644
    SyscallHandler->DeserializeSeccompFD(ParentThread, FEXSeccompFD);
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
-index 4fec3bf97..e5267e863 100644
+index 4fec3bf..e5267e8 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
 @@ -10,6 +10,7 @@ $end_info$
@@ -141,7 +141,7 @@ index 4fec3bf97..e5267e863 100644
    const auto [auxvBase, auxvSize] = FEX::HLE::_SyscallHandler->GetCodeLoader()->GetAuxv();
    if (auxvBase == 0) {
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
-index 854232341..fca0ff259 100644
+index 8542323..fca0ff2 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
 @@ -34,6 +34,7 @@ private:
@@ -153,7 +153,7 @@ index 854232341..fca0ff259 100644
  };
  } // namespace FEX::EmulatedFile
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
-index 356ace239..ac8cc16ad 100644
+index 356ace2..ac8cc16 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
 @@ -1037,10 +1037,12 @@ void SyscallHandler::UnlockAfterFork(FEXCore::Core::InternalThreadState* LiveThr
@@ -170,7 +170,7 @@ index 356ace239..ac8cc16ad 100644
  
  static bool isHEX(char c) {
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.cpp
-index de69906db..5c581c66f 100644
+index de69906..5c581c6 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.cpp
 @@ -159,6 +159,19 @@ void ThreadManager::StatAlloc::UnlockAfterFork(FEXCore::Core::InternalThreadStat
@@ -194,7 +194,7 @@ index de69906db..5c581c66f 100644
    ::syscall(SYSCALL_DEF(rt_sigprocmask), SIG_SETMASK, &Mask, &Mask, 8);
    return Mask;
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
-index 075336dda..ad4aa7854 100644
+index 075336d..ad4aa78 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 @@ -195,6 +195,11 @@ public:
@@ -210,5 +210,5 @@ index 075336dda..ad4aa7854 100644
  
    FEX::HLE::ThreadStateObject* CreateThread(const FEXCore::Core::CPUState* NewThreadState = nullptr, uint64_t ParentTID = 0,
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

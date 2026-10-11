@@ -1,4 +1,4 @@
-From bdfa54839cf3e86cad33c9f8ffdf0f131590c874 Mon Sep 17 00:00:00 2001
+From 8cd4a0923bf7275bca3316c5c5d394d02a61bc53 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 22:07:36 +0300
 Subject: [PATCH] Signals: report the Linux 64-bit CS/SS selectors in the frame
@@ -17,7 +17,7 @@ arch/x86/kernel/signal_64.c writes __USER_CS/__USER_DS into the frame and forces
  3 files changed, 27 insertions(+), 4 deletions(-)
 
 diff --git a/FEXCore/include/FEXCore/Core/CoreState.h b/FEXCore/include/FEXCore/Core/CoreState.h
-index 349355d34..ea9ed2285 100644
+index 349355d..ea9ed22 100644
 --- a/FEXCore/include/FEXCore/Core/CoreState.h
 +++ b/FEXCore/include/FEXCore/Core/CoreState.h
 @@ -242,7 +242,17 @@ struct alignas(64) CPUState {
@@ -39,7 +39,7 @@ index 349355d34..ea9ed2285 100644
    // Follows encoding of the TI bit in segment selector encoding.
    constexpr static uint32_t SEGMENT_ARRAY_INDEX_GDT = 0;
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 9c01c5f15..22d9f7289 100644
+index 9c01c5f..22d9f72 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -427,8 +427,8 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
@@ -54,7 +54,7 @@ index 9c01c5f15..22d9f7289 100644
    Frame->State.ss_cached = Frame->State.CalculateGDTBase(*Frame->State.GetSegmentFromIndex(Frame->State, Frame->State.ss_idx));
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.cpp
-index 5c581c66f..e3135b677 100644
+index 5c581c6..e3135b6 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.cpp
 @@ -246,8 +246,9 @@ ThreadManager::CreateThread(const FEXCore::Core::CPUState* NewThreadState, uint6
@@ -89,5 +89,5 @@ index 5c581c66f..e3135b677 100644
  
    if (InheritThread) {
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

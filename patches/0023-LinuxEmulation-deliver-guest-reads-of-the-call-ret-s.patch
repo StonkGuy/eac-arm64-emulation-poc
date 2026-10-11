@@ -1,7 +1,7 @@
-From 63c562dec63fd1505932d1e7f42bca62d6463002 Mon Sep 17 00:00:00 2001
+From 8fed995217c1b814ff6a702630b5fbd8ac4bfa85 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 21:40:02 +0300
-Subject: [PATCH 23/25] LinuxEmulation: deliver guest reads of the call/ret
+Subject: [PATCH] LinuxEmulation: deliver guest reads of the call/ret
  shadow-stack guard pages instead of spinning
 
 The SIGSEGV handler took every fault inside a thread's call/ret shadow-stack allocation (the stack and its two guard pages)
@@ -31,7 +31,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  1 file changed, 10 insertions(+), 3 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
-index 342223c1f..ffbb492cc 100644
+index 342223c..ffbb492 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
 @@ -52,9 +52,16 @@ bool SyscallHandler::HandleSegfault(FEXCore::Core::InternalThreadState* Thread,
@@ -55,5 +55,5 @@ index 342223c1f..ffbb492cc 100644
  
    {
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

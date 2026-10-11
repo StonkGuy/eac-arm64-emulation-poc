@@ -1,4 +1,4 @@
-From e8e66fa7512a05d4c3ad2592eb5c8c1dc7cc3476 Mon Sep 17 00:00:00 2001
+From 0a9cd24f5038e3035b5430da4cc950056569aa18 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 22:37:55 +0300
 Subject: [PATCH] Signals: write the interrupted mask into the frame's
@@ -71,3 +71,6 @@ index deba62c..ad61b7b 100644
    // Apparently RAX is always set to zero in case of badly misbehaving C applications and variadics.
    Frame->State.gregs[FEXCore::X86State::REG_RAX] = 0;
    Frame->State.gregs[FEXCore::X86State::REG_RDI] = Signal;
+-- 
+2.39.5 (Apple Git-154)
+

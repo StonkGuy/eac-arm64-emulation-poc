@@ -146,7 +146,7 @@ estimate, not a prediction:
   Rosetta does not pay FEX's software-TSO tax (hardware-TSO cost on M1 ≈ 8.9%: Wrenger, JSA 2024). On a system *without*
   Rosetta, FEX gets hardware TSO only if the guest kernel can switch the CPU into TSO mode (`prctl(PR_SET_MEM_MODEL)`,
   Asahi's kernel series). On Asahi this works on the host and inside the muvm guest (measured with
-  `tests/bench/tso_probe.c`, so FEX pays nothing for it there). On macOS, libkrunfw's guest kernel carries the same
+  `eac-tests/bench/tso_probe.c`, so FEX pays nothing for it there). On macOS, libkrunfw's guest kernel carries the same
   series, and it works: in the Hypervisor.framework guest `prctl(PR_SET_MEM_MODEL, TSO)` succeeds and FEX reports hardware
   TSO ([macos-port.md](macos-port.md)). Without it FEX would fall back to software TSO, the single largest emulation cost.
 * **GPU layer:** no quantified MoltenVK-vs-native-Metal or D3DMetal-vs-DXVK FPS figures exist publicly; treat graphics

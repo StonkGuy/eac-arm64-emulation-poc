@@ -1,4 +1,4 @@
-From c7c2da7f5193f2e04384a8f2784f440f23dc4ca4 Mon Sep 17 00:00:00 2001
+From 0cb56fd7e311beaca5ec432de3bb4dca1b68bdfa Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 20:29:03 +0300
 Subject: [PATCH] Signals: return to the guest's own host stack level when
@@ -33,7 +33,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  4 files changed, 35 insertions(+)
 
 diff --git a/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h b/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
-index 42db7a70e..fb6ab8c14 100644
+index 42db7a7..fb6ab8c 100644
 --- a/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
 +++ b/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
 @@ -45,6 +45,7 @@ struct X86ContextBackup {
@@ -53,7 +53,7 @@ index 42db7a70e..fb6ab8c14 100644
    // Guest state
    int Signal;
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 54910400c..53fb509d3 100644
+index 3c6c94e..abdeaec 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -176,6 +176,7 @@ ArchHelpers::Context::ContextBackup* SignalDelegator::StoreThreadState(FEXCore::
@@ -64,7 +64,7 @@ index 54910400c..53fb509d3 100644
  
    // Store fault to top status and then reset it
    Context->FaultToTopAndGeneratedException = Thread->CurrentFrame->SynchronousFaultData.FaultToTopAndGeneratedException;
-@@ -289,6 +290,8 @@ void SignalDelegator::RestoreThreadState(FEXCore::Core::InternalThreadState* Thr
+@@ -290,6 +291,8 @@ void SignalDelegator::RestoreThreadState(FEXCore::Core::InternalThreadState* Thr
      }
    }
  
@@ -73,7 +73,7 @@ index 54910400c..53fb509d3 100644
    // Reset the guest state
    memcpy(&Thread->CurrentFrame->State, &Context->GuestState, sizeof(FEXCore::Core::CPUState));
  
-@@ -328,6 +331,7 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
+@@ -329,6 +332,7 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
    // the syscall (discarding the handler's return value). See SeccompEmulator for the kernel semantics.
    ContextBackup->SeccompTrapRIP = ThreadObject->SeccompTrapRIP;
    ThreadObject->SeccompTrapRIP = 0;
@@ -81,7 +81,7 @@ index 54910400c..53fb509d3 100644
  
    auto Frame = Thread->CurrentFrame;
  
-@@ -365,6 +369,9 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
+@@ -366,6 +370,9 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
      ContextBackup->InSyscallInfo = Thread->CurrentFrame->InSyscallInfo;
      Thread->CurrentFrame->InSyscallInfo = 0;
    } else {
@@ -92,7 +92,7 @@ index 54910400c..53fb509d3 100644
      // registers are spilled. The guest handler is going to run JIT code with live registers, so it must not inherit that: an SMC
      // fault or a nested signal before the handler's own first syscall would skip spilling every register (the spill mask is
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
-index ad61b7b9b..4c91eb220 100644
+index ad61b7b..4c91eb2 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 @@ -177,6 +177,13 @@ void SignalDelegator::RestoreFrame_x64(FEXCore::Core::InternalThreadState* Threa
@@ -138,7 +138,7 @@ index ad61b7b9b..4c91eb220 100644
      ArchHelpers::Context::SetFillSRASingleInst(ucontext, false);
      // Set our state register to point to our guest thread data
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
-index ad4aa7854..61fd91aae 100644
+index ad4aa78..61fd91a 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 @@ -98,6 +98,11 @@ struct ThreadStateObject : public FEXCore::Allocator::FEXAllocOperators {
@@ -154,5 +154,5 @@ index ad4aa7854..61fd91aae 100644
    uint32_t persona {};
  
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

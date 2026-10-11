@@ -1,7 +1,7 @@
-From 8fc2ca25d34fa0254b4901def35a5a1aff8e3c89 Mon Sep 17 00:00:00 2001
+From 19647b2ef986dae962afb1223ccb07d8cfcee2ea Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 01:52:21 +0300
-Subject: [PATCH 1/9] LinuxSyscalls: emulate x86-64 ptrace for tracees that also
+Subject: [PATCH] LinuxSyscalls: emulate x86-64 ptrace for tracees that also
  run under FEX
 
 Injector-style launchers (the Easy Anti-Cheat Linux launcher that Proton runs is the motivating case) drive their
@@ -1190,3 +1190,6 @@ index 11ff163..4e70474 100644
      REGISTER_SYSCALL_IMPL_X64(semop, SyscallPassthrough3<SYSCALL_DEF(semop)>);
      REGISTER_SYSCALL_IMPL_X64(getrlimit, SyscallPassthrough2<SYSCALL_DEF(getrlimit)>);
      REGISTER_SYSCALL_IMPL_X64(getrusage, SyscallPassthrough2<SYSCALL_DEF(getrusage)>);
+-- 
+2.39.5 (Apple Git-154)
+

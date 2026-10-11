@@ -1,9 +1,16 @@
 # The patch series
 
-Twenty-five patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
+Twenty-six patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
 (`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610; 0022–0026 on top of 0001–0020
-(`0021` is withdrawn, see below). They are not all the same kind of thing, so they are
-grouped here by what they are for:
+(`0021` is withdrawn, see below); 0033 was added on top of 0026. They are not all the same kind of thing, so they are
+grouped here by what they are for.
+
+**Where the code lives.** Each patch is one commit on branch `eac-2610` of [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) (release tag
+`eac-2610.1`), and every test named below is in that branch's
+[`eac-tests/`](https://github.com/StonkGuy/FEX/tree/eac-2610/eac-tests). `patches/` here is a generated snapshot of
+those commits; send changes to the fork.
+
+The groups:
 
 | group | patches | what it is |
 |---|---|---|
@@ -48,7 +55,7 @@ launcher uses (`GETREGS/SETREGS`, `GETREGSET/SETREGSET`, `PEEK*`/`POKE*` with co
 `GETSIGINFO`, `CONT`, `SYSCALL`, `DETACH`), and a `/proc/<pid>/exe` that names the guest binary. The full conversation
 is in [how-it-works.md](how-it-works.md).
 
-**Without it:** no anti-cheat session. **Verified by:** `tests/ptrace-inject` (35 checks, the last six being a stale-exit-stop check after an entry stop resumed with `CONT` and a no-state-file check for a failing `PTRACE_TRACEME`; passes under FEX; the binary
+**Without it:** no anti-cheat session. **Verified by:** `eac-tests/ptrace-inject` (35 checks, the last six being a stale-exit-stop check after an entry stop resumed with `CONT` and a no-state-file check for a failing `PTRACE_TRACEME`; passes under FEX; the binary
 also targets native x86-64 Linux as the reference, see [tools.md](tools.md)). **Limits** (all off the launcher's path,
 none costs anything when unused): only the main thread of a tracee is traced; `PTRACE_ATTACH` to an already-running FEX
 process is not emulated; `PTRACE_SINGLESTEP` and `PTRACE_SEIZE`/`INTERRUPT`/`LISTEN` are passed to the host and do not
@@ -87,7 +94,7 @@ paths, decoded by `tools/harness/sigtrace.py`.
 
 **Without it:** Photon time-outs in roughly every second session that reached a world, and a stand-alone Wine
 reproducer that wedged 5–6 of 6 runs. **With it:** 0 of 7 real-game sessions timed out vs 4 of 7 control, and none of the 59 sessions run since; the reproducer
-0 of 6 vs 6 of 6 (p = 0.002). **Verified by:** `tests/signal-mask` (checks 1, 3, 4b fail with `FEX_SIGNALMASKFIX=0`).
+0 of 6 vs 6 of 6 (p = 0.002). **Verified by:** `eac-tests/signal-mask` (checks 1, 3, 4b fail with `FEX_SIGNALMASKFIX=0`).
 
 ### 0008 — do not leave `InSyscallInfo` set for a handler entered from a syscall
 
@@ -99,7 +106,7 @@ the handler ran with a stale marker; the SMC write-fault handler and a second si
 nothing, and redispatch from stale frame contents — the register changes the handler made are silently reverted.
 
 **What it does.** Clears `InSyscallInfo` for the handler when the interrupted code was not in the JIT, and restores it at
-`rt_sigreturn`. **Verified by:** `tests/signal-regs` (raises the signal four ways; the `tgkill`/`kill`/`tkill` cases fail
+`rt_sigreturn`. **Verified by:** `eac-tests/signal-regs` (raises the signal four ways; the `tgkill`/`kill`/`tkill` cases fail
 on stock FEX). This is a plain correctness bug, *not* the cause of the disconnects (with 0008 but without 0007 the
 reproducer still wedged 6 of 6). Analysis: [signal-registers.md](signal-registers.md).
 
@@ -125,8 +132,8 @@ filter traps) and what keeps Wine's `install_bpf` filter, which traps every sysc
 from re-entering its own dispatcher mid-flight. Patch 0010 is the only patch that touches this path; it is **our patch
 code**.
 
-**Without it:** `tests/seccomp-trap` segfaults after installing the filter (1000 trapped syscalls never stabilise).
-**Verified by:** `tests/seccomp-trap` and `tests/seccomp-trap-noexec` (14 checks; both pass under FEX with
+**Without it:** `eac-tests/seccomp-trap` segfaults after installing the filter (1000 trapped syscalls never stabilise).
+**Verified by:** `eac-tests/seccomp-trap` and `eac-tests/seccomp-trap-noexec` (14 checks; both pass under FEX with
 `FEX_NEEDSSECCOMP=1` and natively, and both fail before this patch — building the series one patch at a time flips
 `seccomp-trap-noexec` from FAIL to PASS at exactly patch 0010). **Limits:** the ia32 non-realtime and realtime frame
 paths are patched alongside the x86-64 one but no ia32 test exercises them (pending). A trapped syscall while the
@@ -149,7 +156,7 @@ data page ~22x slower (7.9 µs vs 0.35 µs) and let a process that changes prote
 behind the invalidation locks — seen as **60+ second world joins** and "Failed to connect to region".
 
 **What it does.** Skips the per-thread walk when no code buffer had translated code in the range, and invalidates the
-per-thread executable-range caches lazily with an epoch. **Verified by:** `tests/bench` (the churn test,
+per-thread executable-range caches lazily with an epoch. **Verified by:** `eac-tests/bench` (the churn test,
 `EXTRA="-DINVAL_MODE=1 -DINVAL_THREADS=190" ./build.sh`).
 
 ### 0002 — stop write-protecting pages that keep faulting
@@ -202,12 +209,12 @@ own architecture with `build.sh native` for that reference run.
 
 | patch | interface | what Linux does | what FEX did | test |
 |---|---|---|---|---|
-| 0011 | `arch_prctl(ARCH_SET_CPUID/ARCH_GET_CPUID)` | on a CPU with `cpuid_fault`: `SET_CPUID(0)` → 0 and a later CPUID raises `#GP` delivered as `SIGSEGV`/`SI_KERNEL`; `GET_CPUID` returns the live state; without the feature `SET_CPUID` → `-ENODEV` | hardcoded `GET_CPUID` = 1, `SET_CPUID` = `-ENODEV`; CPUID always executed | `tests/cpuid-fault` |
-| 0012 | `PTRACE_PEEKUSER`/`POKEUSER` on the debug registers | DR0–DR3 at byte 848 of `struct user`; DR0–DR3 POKE validates the address (`-EINVAL` for a non-canonical value); DR4/DR5 POKE `-EIO`, PEEK 0; DR7 POKE validates and stores the raw value; a slot-unaligned or `>= sizeof(struct user)` offset is `-EIO`; an in-struct offset with no handler reads 0 | accepted and silently discarded every out-of-image POKE, `-EPERM` from PEEK | `tests/ptrace-dregs` |
-| 0013 | `/proc/<pid>/status` `Seccomp:` and `TracerPid:` | `Seccomp:` is the process's own mode (0/1/2); `TracerPid:` is the pid of its own ptracer, 0 when untraced | no creator — the guest read FEX's own host seccomp mode and tracer | `tests/proc-status` |
-| 0014 | `PTRACE_GETREGSET`/`SETREGSET` type | `ptrace_regset()` returns `-EINVAL` for an unknown type, never `-EPERM`; `NT_X86_XSTATE` (0x202) is a known x86-64 regset and succeeds | only `NT_PRSTATUS`/`NT_PRFPREG` emulated, every other type `-EPERM` | `tests/ptrace-regsets` |
-| 0015 | `restart_syscall` | `do_no_restart_syscall()` returns `-EINTR` when no restart is pending | registered as a `SYSCALL_STUB` whose body is `ERROR_AND_DIE` — the call killed the process | `tests/restart-syscall` |
-| 0033 | `/proc/<pid>/maps` | every user mapping lies below `TASK_SIZE_MAX` ((1 << 47) − 4096); the only line above it is `[vsyscall]`; every file-backed ELF mapping is x86-64 | no creator — the guest read the host file, which also lists FEX, the AArch64 host libraries and the host vdso above 2^47. An EAC launcher module that picks a library from its child's maps to inject into chose a host library, the child died and the launcher reported `210 Unexpected error. (#1)` | `tests/proc-maps` |
+| 0011 | `arch_prctl(ARCH_SET_CPUID/ARCH_GET_CPUID)` | on a CPU with `cpuid_fault`: `SET_CPUID(0)` → 0 and a later CPUID raises `#GP` delivered as `SIGSEGV`/`SI_KERNEL`; `GET_CPUID` returns the live state; without the feature `SET_CPUID` → `-ENODEV` | hardcoded `GET_CPUID` = 1, `SET_CPUID` = `-ENODEV`; CPUID always executed | `eac-tests/cpuid-fault` |
+| 0012 | `PTRACE_PEEKUSER`/`POKEUSER` on the debug registers | DR0–DR3 at byte 848 of `struct user`; DR0–DR3 POKE validates the address (`-EINVAL` for a non-canonical value); DR4/DR5 POKE `-EIO`, PEEK 0; DR7 POKE validates and stores the raw value; a slot-unaligned or `>= sizeof(struct user)` offset is `-EIO`; an in-struct offset with no handler reads 0 | accepted and silently discarded every out-of-image POKE, `-EPERM` from PEEK | `eac-tests/ptrace-dregs` |
+| 0013 | `/proc/<pid>/status` `Seccomp:` and `TracerPid:` | `Seccomp:` is the process's own mode (0/1/2); `TracerPid:` is the pid of its own ptracer, 0 when untraced | no creator — the guest read FEX's own host seccomp mode and tracer | `eac-tests/proc-status` |
+| 0014 | `PTRACE_GETREGSET`/`SETREGSET` type | `ptrace_regset()` returns `-EINVAL` for an unknown type, never `-EPERM`; `NT_X86_XSTATE` (0x202) is a known x86-64 regset and succeeds | only `NT_PRSTATUS`/`NT_PRFPREG` emulated, every other type `-EPERM` | `eac-tests/ptrace-regsets` |
+| 0015 | `restart_syscall` | `do_no_restart_syscall()` returns `-EINTR` when no restart is pending | registered as a `SYSCALL_STUB` whose body is `ERROR_AND_DIE` — the call killed the process | `eac-tests/restart-syscall` |
+| 0033 | `/proc/<pid>/maps` | every user mapping lies below `TASK_SIZE_MAX` ((1 << 47) − 4096); the only line above it is `[vsyscall]`; every file-backed ELF mapping is x86-64 | no creator — the guest read the host file, which also lists FEX, the AArch64 host libraries and the host vdso above 2^47. An EAC launcher module that picks a library from its child's maps to inject into chose a host library, the child died and the launcher reported `210 Unexpected error. (#1)` | `eac-tests/proc-maps` |
 
 **Status.** 0011–0015 are verified: each test passes natively and under the patched FEX and fails without its patch
 (measured by building the series one patch at a time), and the Linux side is confirmed against kernel source. Known
@@ -245,11 +252,11 @@ These patches close the gaps that Wine's own `ntdll:exception` test and a real-k
 
 | patch | what Linux does | what FEX did | test |
 |---|---|---|---|
-| 0016 | `rt_sigreturn` always applies the frame's EFLAGS (`FIX_EFLAGS`, which covers TF and DF) | applied the flags only if the handler had also changed RIP, so a handler that set TF to start single-stepping, or changed DF, was ignored | `tests/sigreturn-eflags` |
-| 0017 | the frame and `mov %cs`/`%ss` report `__USER_CS` = `0x33` and `__USER_DS` = `0x2b` (`0x23` for 32-bit code) | a bare GDT index (`0x30`) for CS and 0 for SS | `tests/signal-frame` |
-| 0018 | `FP_XSTATE_MAGIC1` in `sw_reserved`, `xstate_size` = the state's size, `FP_XSTATE_MAGIC2` right after it (`fpu/signal.c`) — how a handler (Wine's among them) finds the AVX state. Without AVX (`FEX_HOSTFEATURES=disableavx`, no XSAVE in CPUID) the 512-byte FXSAVE frame with no `MAGIC2`, as the kernel writes without XSAVE | wrote the magic only with AVX enabled and a size that pointed past the trailer | `tests/signal-frame`, also with `FEX_HOSTFEATURES=disableavx` |
-| 0019 | when the frame cannot be written at the interrupted RSP, the thread dies from `SIGSEGV` (`force_sigsegv`) | wrote the frame without checking the guest mapping; if RSP pointed at host memory FEX corrupted itself inside its own signal handler | `tests/signal-frame` (guard, see below) |
-| 0020 | the frame's `uc_sigmask` holds the interrupted mask, and `rt_sigreturn` installs whatever the handler left there, minus `SIGKILL`/`SIGSTOP` (never blockable) | never wrote the field (handlers read stack garbage) and ignored a handler's rewrite | `tests/signal-frame`, `tests/signal-mask` (check 7) |
+| 0016 | `rt_sigreturn` always applies the frame's EFLAGS (`FIX_EFLAGS`, which covers TF and DF) | applied the flags only if the handler had also changed RIP, so a handler that set TF to start single-stepping, or changed DF, was ignored | `eac-tests/sigreturn-eflags` |
+| 0017 | the frame and `mov %cs`/`%ss` report `__USER_CS` = `0x33` and `__USER_DS` = `0x2b` (`0x23` for 32-bit code) | a bare GDT index (`0x30`) for CS and 0 for SS | `eac-tests/signal-frame` |
+| 0018 | `FP_XSTATE_MAGIC1` in `sw_reserved`, `xstate_size` = the state's size, `FP_XSTATE_MAGIC2` right after it (`fpu/signal.c`) — how a handler (Wine's among them) finds the AVX state. Without AVX (`FEX_HOSTFEATURES=disableavx`, no XSAVE in CPUID) the 512-byte FXSAVE frame with no `MAGIC2`, as the kernel writes without XSAVE | wrote the magic only with AVX enabled and a size that pointed past the trailer | `eac-tests/signal-frame`, also with `FEX_HOSTFEATURES=disableavx` |
+| 0019 | when the frame cannot be written at the interrupted RSP, the thread dies from `SIGSEGV` (`force_sigsegv`) | wrote the frame without checking the guest mapping; if RSP pointed at host memory FEX corrupted itself inside its own signal handler | `eac-tests/signal-frame` (guard, see below) |
+| 0020 | the frame's `uc_sigmask` holds the interrupted mask, and `rt_sigreturn` installs whatever the handler left there, minus `SIGKILL`/`SIGSTOP` (never blockable) | never wrote the field (handlers read stack garbage) and ignored a handler's rewrite | `eac-tests/signal-frame`, `eac-tests/signal-mask` (check 7) |
 
 **Cost.** Nothing on the common path: 0016, 0017, 0018 and 0020 change what is written to or read from a signal frame;
 0019 adds one lookup in the guest mapping table per signal delivered.
@@ -257,13 +264,13 @@ These patches close the gaps that Wine's own `ntdll:exception` test and a real-k
 **Verified by.** Each test passes natively on x86-64 and under the patched FEX and fails without its patch (measured by
 building the series one patch at a time). `ntdll:exception` under Proton went from dying before its first check to 8
 failures (15 todo). **Limits:** 0019 has no deterministic reproducer — the corruption needs a guest RSP that happens to
-land on a host mapping, which was seen in a crash dump but cannot be arranged from a test; `tests/signal-frame` pins
+land on a host mapping, which was seen in a crash dump but cannot be arranged from a test; `eac-tests/signal-frame` pins
 the outcome of the checked path (a stack it cannot write) against the native kernel instead. Hardware
 execute breakpoints (DR0–DR3 with DR7) are stored (0012) but never fire; making them fire needs a breakpoint check
 inside the JIT, and nothing on this project's path needs it. The remaining `ntdll:exception` failures are in that
 area plus segment selectors other than CS/SS and x87/SSE precision corners.
 
-**Withdrawn: `0021` (`pop r/m` leaves RSP unchanged on a fault).** It makes `tests/pop-fault` pass, but its rewrite of the JIT `pop r/m` memory-destination path breaks the normal, non-faulting path. With it installed, the EAC launcher hangs at `Starting Wine module mapping` and never reaches `Launcher finished with: 301` (0001–0020 reach 301; 0001–0021 do not). The patch is kept for reference in [`patches/withdrawn/`](../patches/withdrawn/README.md) and is not part of the series. `tests/pop-fault` therefore fails on the shipped series.
+**Withdrawn: `0021` (`pop r/m` leaves RSP unchanged on a fault).** It makes `eac-tests/pop-fault` pass, but its rewrite of the JIT `pop r/m` memory-destination path breaks the normal, non-faulting path. With it installed, the EAC launcher hangs at `Starting Wine module mapping` and never reaches `Launcher finished with: 301` (0001–0020 reach 301; 0001–0021 do not). The patch is kept for reference in [`patches/withdrawn/`](../patches/withdrawn/README.md) and is not part of the series. `eac-tests/pop-fault` therefore fails on the shipped series.
 
 ---
 
@@ -276,11 +283,11 @@ anything on the common path.
 
 | patch | behaviour | stock FEX | patched | test |
 |---|---|---|---|---|
-| 0022 | a SIGSYS trap delivered from inside the syscall handler returns to the thread's own host-stack level | every trap left the handler's host frames behind (~400 B); a thread died after a few thousand traps | no growth; 100 000 traps on one thread | `tests/seccomp-trap` (check 6) |
-| 0023 | a guest read of FEX's call/ret shadow-stack guard page is delivered to the guest as SIGSEGV | treated as a shadow-stack over/underflow and the same load resumed: an endless host fault loop | only a fault where an x25 push/pop lands is a shadow-stack event | `tests/maps-probe` |
+| 0022 | a SIGSYS trap delivered from inside the syscall handler returns to the thread's own host-stack level | every trap left the handler's host frames behind (~400 B); a thread died after a few thousand traps | no growth; 100 000 traps on one thread | `eac-tests/seccomp-trap` (check 6) |
+| 0023 | a guest read of FEX's call/ret shadow-stack guard page is delivered to the guest as SIGSEGV | treated as a shadow-stack over/underflow and the same load resumed: an endless host fault loop | only a fault where an x25 push/pop lands is a shadow-stack event | `eac-tests/maps-probe` |
 | 0024 | `FEX_PROFILESAMPLEMINTHREADS` sets the sampler's thread threshold; `0` stores one snapshot per external `SIGPROF` instead of starting a sampler thread | the sampler started only at 100 threads | for a process that must not grow a thread | — (diagnostic option, group D) |
-| 0025 | with TF set, the trap after `popfq; iretq` lands on the `iretq` target, and single-stepping across translated code traps once per instruction | the trap landed one instruction late, or escaped through the lookup caches | dispatcher bounce on `iretq` and on indirect exits while TF is set | `tests/tf-iret` |
-| 0026 | a thread that exits from a signal handler running on its alt stack keeps that stack until it has left it | the alt stack was unmapped under the running handler; Wine's thread termination crashed the process | released after the return to the thread's own stack | `tests/seccomp-trap` (check 7) |
+| 0025 | with TF set, the trap after `popfq; iretq` lands on the `iretq` target, and single-stepping across translated code traps once per instruction | the trap landed one instruction late, or escaped through the lookup caches | dispatcher bounce on `iretq` and on indirect exits while TF is set | `eac-tests/tf-iret` |
+| 0026 | a thread that exits from a signal handler running on its alt stack keeps that stack until it has left it | the alt stack was unmapped under the running handler; Wine's thread termination crashed the process | released after the return to the thread's own stack | `eac-tests/seccomp-trap` (check 7) |
 
 **Without them:** the bootstrapper's first thread spins forever in FEX's fault handler (0023), its single-step check
 fails and it writes a crash dump (0025), and a seccomp-heavy Wine thread dies of host-stack exhaustion (0022). With

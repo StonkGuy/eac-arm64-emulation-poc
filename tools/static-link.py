@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Tiny static linker for ONE freestanding x86-64 relocatable object -> static ELF executable.
 
-Exists so the freestanding test programs in tests/ can be built on an aarch64 machine that has clang (with the x86-64
+Exists so the freestanding test programs (StonkGuy/FEX eac-tests/, which carries its own copy) can be built on an aarch64 machine that has clang (with the x86-64
 target) but no x86-64 linker (the LLVM builds that ship with many distros can compile for x86-64 but their ld.lld often
 cannot be used, and binutils is aarch64-only). It is NOT a general linker: one input object, no libraries, no shared
 objects, no TLS, no GOT/PLT; only the relocation types clang emits for -fno-pic -ffreestanding code are handled.

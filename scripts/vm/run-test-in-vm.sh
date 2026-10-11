@@ -1,10 +1,11 @@
 #!/bin/sh
-# Runs the test inside a throw-away muvm VM in which the patched FEX is registered as the x86 interpreter
-# (the same registration scripts/vm/steam-vm.sh does). Needs scripts/vm/install-overlay.sh to have been run.
-#   ./run-in-vm.sh [path/to/ptrace_inject_test]
+# Runs an eac-tests binary (default: ptrace_inject_test, built in the current directory) inside a throw-away muvm VM in
+# which the patched FEX is registered as the x86 interpreter (the same registration scripts/vm/steam-vm.sh does).
+# Needs scripts/vm/install-overlay.sh to have been run. Prints the output; exit 0 when it says RESULT: PASS.
+#   scripts/vm/run-test-in-vm.sh [path/to/test-binary]
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$HERE/../.." && pwd)
-BIN=$(readlink -f "${1:-$HERE/ptrace_inject_test}")
+BIN=$(readlink -f "${1:-./ptrace_inject_test}")
 OVERLAY=${FEX_OVERLAY_DIR:-$HOME/.local/share/vrchat-fex-eac/fex}/FEX
 STATE=${XDG_STATE_HOME:-$HOME/.local/state}/vrchat-fex-eac; mkdir -p "$STATE"
 OUT="$STATE/ptrace-test.out"; rm -f "$OUT"

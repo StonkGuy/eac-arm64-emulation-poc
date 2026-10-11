@@ -1,9 +1,8 @@
-From 73303f96878ae17749a10c2cd6d475ff2486309c Mon Sep 17 00:00:00 2001
+From 78adb13feb2dda06ee3aa241799fbbaa8012f6f2 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 21:57:46 +0300
-Subject: [PATCH 25/25] JIT: raise the single-step trap on the target of an
- IRETQ that loads TF, and never leave single-step mode through the lookup
- caches
+Subject: [PATCH] JIT: raise the single-step trap on the target of an IRETQ
+ that loads TF, and never leave single-step mode through the lookup caches
 
 Two places let a single-step trap land later than on x86:
 
@@ -46,7 +45,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  5 files changed, 29 insertions(+), 3 deletions(-)
 
 diff --git a/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp b/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
-index c2b1d8e28..c418630a8 100644
+index c2b1d8e..c418630 100644
 --- a/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
 +++ b/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
 @@ -195,6 +195,26 @@ DEF_OP(ExitFunction) {
@@ -77,7 +76,7 @@ index c2b1d8e28..c418630a8 100644
        // First try to pop from the call-ret stack, otherwise follow the normal path (but ending in a ret)
        ldp<ARMEmitter::IndexType::POST>(TMP1, TMP2, REG_CALLRET_SP, 0x10);
 diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
-index ef7e33299..bb0d111d8 100644
+index ef7e332..bb0d111 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 +++ b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 @@ -886,6 +886,7 @@ CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry, uint64_t Size
@@ -89,7 +88,7 @@ index ef7e33299..bb0d111d8 100644
  
    // Prepare restart via long jump in case branch encoding fails.
 diff --git a/FEXCore/Source/Interface/Core/JIT/JITClass.h b/FEXCore/Source/Interface/Core/JIT/JITClass.h
-index 17e76910b..331b3c597 100644
+index 17e7691..331b3c5 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JITClass.h
 +++ b/FEXCore/Source/Interface/Core/JIT/JITClass.h
 @@ -82,6 +82,7 @@ private:
@@ -101,7 +100,7 @@ index 17e76910b..331b3c597 100644
    uint32_t SSANodeMultiplier {24};
  
 diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
-index 0f7a00eee..731f91292 100644
+index 0f7a00e..731f912 100644
 --- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
 +++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
 @@ -164,7 +164,8 @@ void OpDispatchBuilder::IRETOp(OpcodeArgs) {
@@ -115,7 +114,7 @@ index 0f7a00eee..731f91292 100644
  }
  
 diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
-index 71766e010..b02dbdff8 100644
+index 71766e0..b02dbdf 100644
 --- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
 +++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
 @@ -1875,8 +1875,11 @@ private:
@@ -133,5 +132,5 @@ index 71766e010..b02dbdff8 100644
      } else {
        _StoreContextGPR(OpSize::i8Bit, Value, ARRAY_OFFSETOF(FEXCore::Core::CPUState, flags, BitOffset));
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

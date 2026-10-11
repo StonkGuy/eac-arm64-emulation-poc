@@ -1,4 +1,4 @@
-From db274b1287a5262e4846d70e628283297b116657 Mon Sep 17 00:00:00 2001
+From 2169934ddaa061f84eddf0ac2805232e6f156ccc Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 22:35:05 +0300
 Subject: [PATCH] Signals: keep the signal alt stack while a thread exits on it
@@ -36,10 +36,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  6 files changed, 38 insertions(+), 7 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 53fb509d3..32ff77aaf 100644
+index abdeaec..7721996 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-@@ -1171,23 +1171,41 @@ void SignalDelegator::RegisterTLSState(FEX::HLE::ThreadStateObject* Thread) {
+@@ -1172,23 +1172,41 @@ void SignalDelegator::RegisterTLSState(FEX::HLE::ThreadStateObject* Thread) {
    }
  }
  
@@ -89,7 +89,7 @@ index 53fb509d3..32ff77aaf 100644
    // Linux signal handlers are per-process rather than per thread
    // Multiple threads could be calling in to this
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
-index 047061455..236da05e1 100644
+index 0470614..236da05 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
 @@ -62,6 +62,9 @@ public:
@@ -103,7 +103,7 @@ index 047061455..236da05e1 100644
    /**
     * @brief Registers a signal handler for the host to handle a signal
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
-index ac8cc16ad..207c33b24 100644
+index ac8cc16..207c33b 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
 @@ -1045,6 +1045,10 @@ void SyscallHandler::UninstallTLSState(FEX::HLE::ThreadStateObject* Thread) {
@@ -118,7 +118,7 @@ index ac8cc16ad..207c33b24 100644
    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
  }
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
-index 7124a05a0..0813fca0b 100644
+index 7124a05..0813fca 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
 @@ -306,6 +306,7 @@ public:
@@ -130,7 +130,7 @@ index 7124a05a0..0813fca0b 100644
    SourcecodeResolver* GetSourcecodeResolver() override {
      return this;
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
-index 61fd91aae..7c86004c7 100644
+index 61fd91a..7c86004 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 @@ -69,6 +69,9 @@ struct ThreadStateObject : public FEXCore::Allocator::FEXAllocOperators {
@@ -144,7 +144,7 @@ index 61fd91aae..7c86004c7 100644
        .ss_sp = nullptr,
        .ss_flags = SS_DISABLE, // By default the guest alt stack is disabled
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
-index 8b9c25948..00188fcd7 100644
+index 8b9c259..00188fc 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
 @@ -347,6 +347,8 @@ namespace PThreads {
@@ -157,5 +157,5 @@ index 8b9c25948..00188fcd7 100644
        FEX::HLE::_SyscallHandler->TM.DestroyThread(ThreadObject, true);
        if (Status == 0) {
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

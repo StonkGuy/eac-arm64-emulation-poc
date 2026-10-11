@@ -46,7 +46,7 @@ In Steam:
 ## 3. Build the patched FEX
 
 ```sh
-scripts/build-fex.sh            # clones FEX at FEX-2610 (14c9268), applies every patch in patches/ (0001, 0002, 0007 are required), builds Release
+scripts/build-fex.sh            # clones StonkGuy/FEX at tag eac-2610.1 (FEX-2610 14c9268 + the patches) into work/FEX, builds Release
 scripts/vm/install-overlay.sh   # copies the binary to ~/.local/share/vrchat-fex-eac/fex/FEX
 ```
 
@@ -56,9 +56,9 @@ touched. binfmt pins the interpreter inode, so after installing a new build, **r
 ## 4. Check the emulator without the game
 
 ```sh
-cd tests/ptrace-inject
-./build.sh clang            # any clang with the x86-64 target (falls back to tools/static-link.py when lld is unusable)
-./run-in-vm.sh              # throw-away muvm VM with the patched FEX registered for x86-64; must end with RESULT: PASS
+cd work/FEX/eac-tests/ptrace-inject
+./build.sh clang            # any clang with the x86-64 target (falls back to eac-tests/tools/static-link.py when lld is unusable)
+../../../../scripts/vm/run-test-in-vm.sh   # throw-away muvm VM with the patched FEX registered for x86-64; must end with RESULT: PASS
 ```
 
 It performs the whole EAC-style injection conversation (35 checks). Under stock FEX (2609.1, or Fedora's 2604 package) it
@@ -69,7 +69,7 @@ FEX) and run them in the same throw-away VM, or inside the running Steam VM with
 has to go to a file: muvm does not relay the guest's stdout):
 
 ```sh
-cd tests/signal-mask && ./build.sh clang      # the signal mask a handler runs with (patch 0007)
+cd ../signal-mask && ./build.sh clang           # the signal mask a handler runs with (patch 0007)
 ./signal_mask_test                            # RESULT: PASS; with FEX_SIGNALMASKFIX=0 (stock behaviour) checks 1, 3 and 4b fail
 cd ../signal-regs && ./build.sh clang         # registers a handler sets survive its first store and system calls (patch 0008)
 ./signal_regs_test                            # RESULT: PASS; on stock FEX the tgkill/kill/tkill cases fail

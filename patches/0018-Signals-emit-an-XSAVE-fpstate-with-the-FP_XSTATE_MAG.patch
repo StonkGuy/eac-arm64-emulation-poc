@@ -1,4 +1,4 @@
-From be9a051b80a56a12e655345b7393ae01f4c43c20 Mon Sep 17 00:00:00 2001
+From 12dd3ebf59e9ef9d19487e1fbc32f70658f826c3 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Thu, 8 Oct 2026 22:07:41 +0300
 Subject: [PATCH] Signals: emit an XSAVE fpstate with the FP_XSTATE_MAGIC1/2
@@ -18,7 +18,7 @@ SetupFrame_x64 reserves there. The ia32 compat frame keeps its own layout.
  1 file changed, 36 insertions(+), 6 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
-index e4053cdd8..f51940f6a 100644
+index e4053cd..f51940f 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 @@ -19,6 +19,7 @@ $end_info$
@@ -85,5 +85,5 @@ index e4053cdd8..f51940f6a 100644
  }
  
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

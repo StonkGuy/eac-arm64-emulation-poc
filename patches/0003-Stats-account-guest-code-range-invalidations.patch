@@ -1,7 +1,7 @@
-From 9b517607dd22351d4a8abdc7011ef6e66e5a26c1 Mon Sep 17 00:00:00 2001
+From 5f468fc28a65f46a655343b618bc2300a2a4def8 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 02:09:04 +0300
-Subject: [PATCH 3/9] Stats: account guest code-range invalidations
+Subject: [PATCH] Stats: account guest code-range invalidations
 
 Every guest mmap/munmap/mprotect (and ptrace poke) ends in TM.InvalidateGuestCodeRange, which takes the thread-creation
 and code-invalidation locks, walks every thread's lookup cache and drops the call-return shadow stack of each thread
@@ -20,7 +20,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  3 files changed, 25 insertions(+), 1 deletion(-)
 
 diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
-index 7b2ec3d52..d0a4a5fca 100644
+index 7b2ec3d..d0a4a5f 100644
 --- a/FEXCore/Source/Interface/Core/Core.cpp
 +++ b/FEXCore/Source/Interface/Core/Core.cpp
 @@ -1070,6 +1070,7 @@ void ContextImpl::InvalidateThreadCachedCodeRange(FEXCore::Core::InternalThreadS
@@ -32,7 +32,7 @@ index 7b2ec3d52..d0a4a5fca 100644
      // This may cause access violations in the thread on Windows as zeroing is not atomic, this is handled by the frontend
      Allocator::VirtualDontNeed(Thread->CallRetStackBase, FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE);
 diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
-index c5844fe10..6530f4b77 100644
+index c5844fe..6530f4b 100644
 --- a/FEXCore/include/FEXCore/Utils/SHMStats.h
 +++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
 @@ -74,7 +74,12 @@ struct ThreadStats {
@@ -50,7 +50,7 @@ index c5844fe10..6530f4b77 100644
  
  // Ensure 16-byte alignment to take advantage of ARM single-copy atomicity.
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
-index dfcd4b0eb..2d9c27a60 100644
+index dfcd4b0..2d9c27a 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 @@ -15,6 +15,7 @@ $end_info$
@@ -100,5 +100,5 @@ index dfcd4b0eb..2d9c27a60 100644
    FEXCore::Context::Context* CTX;
    FEX::HLE::SignalDelegator* SignalDelegation;
 -- 
-2.55.0
+2.39.5 (Apple Git-154)
 

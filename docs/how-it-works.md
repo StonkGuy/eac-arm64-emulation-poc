@@ -77,7 +77,7 @@ Stock FEX handles a small passthrough subset of ptrace (enough for Ubisoft's Win
 
 Limitations: only the main thread of a tracee is traced; register reads/writes work at the stops FEX itself produces,
 not at a real `kill(self, SIGSTOP)` stop; `PTRACE_ATTACH` to an already running FEX process is not emulated.
-`tests/ptrace-inject` is a freestanding x86-64 program that performs the whole conversation above and must print
+`eac-tests/ptrace-inject` is a freestanding x86-64 program that performs the whole conversation above and must print
 `RESULT: PASS` under FEX. (The same binary targets native x86-64 Linux as the reference; that run is not recorded here.)
 
 ## SMC hot pages (`patches/0002`)
@@ -118,7 +118,7 @@ shared lookup cache, search the thread's page map, reset its executable-range ca
 `mprotect` of a plain data page 22x slower (7.9 µs vs 0.35 µs) and let a process that changes protections in bulk stall all
 its other threads behind the invalidation locks. `0003` adds live stats (`FEX_PROFILESTATS=1`: invalidation count, cycles
 and dropped call-return stacks per thread); `0004` skips the per-thread walk when no code buffer had translated code in the
-range and invalidates the per-thread executable-range caches lazily with an epoch. `tests/bench` has the churn test
+range and invalidates the per-thread executable-range caches lazily with an epoch. `eac-tests/bench` has the churn test
 (`EXTRA="-DINVAL_MODE=1 -DINVAL_THREADS=190" ./build.sh`).
 
 ## Profiling a game that detects debuggers (`patches/0005`, `0006`)
@@ -155,7 +155,7 @@ its `SIGUSR1` thread-suspension handler). Stock FEX blocks only `sa_mask | signa
 (`SignalInfo.CurrentSignalMask`) at handler entry or return. `FEX_SIGNALMASKFIX` (on by default; `=0` restores the stock behaviour) stores the guest mask in the context backup
 on entry, applies the Linux rule to both the guest-visible and the host mask, restores the saved mask at `rt_sigreturn` and
 re-raises signals that were only recorded as pending and became unmasked. `FEX_SIGNALTRACE=1` adds a lock-free in-memory trace
-of the signal paths (`/dev/shm/fex-<pid>-sigtrace`, decoded by `tools/harness/sigtrace.py`). `tests/signal-mask` checks the mask
+of the signal paths (`/dev/shm/fex-<pid>-sigtrace`, decoded by `tools/harness/sigtrace.py`). `eac-tests/signal-mask` checks the mask
 semantics with a freestanding program (all checks pass on a Linux kernel and on the patched FEX; checks 1, 3 and 4b fail with `FEX_SIGNALMASKFIX=0`).
 Evidence and the reproducer: [disconnects.md](disconnects.md).
 
@@ -166,4 +166,4 @@ signal that finds a thread parked in `futex` or `read`) used to run with `Frame-
 "all registers are already spilled to the frame" left behind by the interrupted `Syscall` op. The SMC write-fault handler and a
 second signal arriving in translated code trust that marker, spill nothing, and redispatch from stale frame contents, so the
 handler's own register changes are reverted. The patch clears the marker for the handler and puts it back at `rt_sigreturn`.
-`tests/signal-regs` is the regression test; the analysis is in [signal-registers.md](signal-registers.md).
+`eac-tests/signal-regs` is the regression test; the analysis is in [signal-registers.md](signal-registers.md).

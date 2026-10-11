@@ -1,4 +1,4 @@
-From 86b51056a31402cfe75c4724b6d537a8c3af337e Mon Sep 17 00:00:00 2001
+From e8f2a2fb9ffc27009ace8ae088fba3e89e523ead Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 11 Oct 2026 13:01:24 +0300
 Subject: [PATCH] proc: list only the emulated process's mappings in
@@ -50,7 +50,7 @@ Upstream: FEX main 14c92681 (2026-10-07) has no /proc/<pid>/maps emulation.
  2 files changed, 61 insertions(+)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
-index e5267e863..885849e66 100644
+index e5267e8..885849e 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
 @@ -25,6 +25,8 @@ $end_info$
@@ -141,7 +141,7 @@ index e5267e863..885849e66 100644
    char Buf[8192];
    ssize_t Len = 0;
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
-index fca0ff259..b98ef4bda 100644
+index fca0ff2..b98ef4b 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
 @@ -34,6 +34,7 @@ private:
@@ -153,5 +153,5 @@ index fca0ff259..b98ef4bda 100644
    const uint32_t ThreadsConfig;
  };
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

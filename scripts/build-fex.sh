@@ -1,7 +1,8 @@
 #!/bin/sh
-# Builds FEX-Emu 2610 with the patches from patches/ applied (developed on 2609.1, rebased onto 2610 without changes).
+# Builds the patched FEX-Emu: StonkGuy/FEX at the pinned tag (branch eac-2610 = FEX-2610 + the patches described in
+# docs/patches.md; patches/ is a generated snapshot of the same commits).
 #
-#   scripts/build-fex.sh            clone (if needed) + patch + configure + build into ./work/FEX/build
+#   scripts/build-fex.sh            clone (if needed) + configure + build into ./work/FEX/build
 #   JOBS=6 scripts/build-fex.sh     limit parallel jobs (default: nproc)
 #   CC=clang CXX=clang++            override the compilers (FEX needs a recent clang)
 #
@@ -11,23 +12,26 @@
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${WORK:-$REPO/work}
-TAG=FEX-2610
-BASE=14c92681f4d62cf84d901460e0358de09c8847a7
+FEX_REPO=https://github.com/StonkGuy/FEX.git
+FEX_EAC_TAG=eac-2610.1
+FEX_EAC_SHA=e3cbe03645c73c9d53a0c87ec25acecca5ba2555
 JOBS=${JOBS:-$(nproc)}
 CC=${CC:-clang}; CXX=${CXX:-clang++}
 
 mkdir -p "$WORK"
 if [ ! -d "$WORK/FEX/.git" ]; then
-  git clone --branch "$TAG" --recurse-submodules --shallow-submodules https://github.com/FEX-Emu/FEX.git "$WORK/FEX"
+  git clone --branch "$FEX_EAC_TAG" --recurse-submodules --shallow-submodules "$FEX_REPO" "$WORK/FEX"
 fi
 cd "$WORK/FEX"
-git cat-file -e "$BASE^{commit}" 2>/dev/null || { echo "expected FEX at $TAG ($BASE)"; exit 1; }
-git merge-base --is-ancestor "$BASE" HEAD || { echo "$WORK/FEX is not based on $TAG ($BASE): remove it and run again"; exit 1; }
-HAVE=$(git rev-list --count "$BASE"..HEAD); WANT=$(ls "$REPO"/patches/*.patch | wc -l)
-if [ "$HAVE" -eq 0 ]; then
-  git -c user.name=build -c user.email=build@invalid am "$REPO"/patches/*.patch
-elif [ "$HAVE" -ne "$WANT" ]; then
-  echo "$WORK/FEX has $HAVE commits on top of $TAG but patches/ has $WANT: remove $WORK/FEX and run again"; exit 1
+# A tree from an older version of this script (upstream FEX-2610 with patches/ applied) or another tag is not updated
+# in place.
+if [ "$(git rev-parse HEAD)" != "$FEX_EAC_SHA" ]; then
+  if [ "$(git rev-parse -q --verify "$FEX_EAC_TAG^{commit}" || true)" = "$FEX_EAC_SHA" ] && git diff --quiet HEAD; then
+    git checkout -q "$FEX_EAC_TAG" && git submodule update --init --recursive --depth 1
+  else
+    echo "$WORK/FEX is not $FEX_EAC_TAG ($FEX_EAC_SHA); probably a tree from an older build-fex.sh." >&2
+    echo "Remove it and run again:  rm -rf '$WORK/FEX'" >&2; exit 1
+  fi
 fi
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
   -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DENABLE_LTO=OFF -DENABLE_ASSERTIONS=OFF -DTUNE_CPU=native \

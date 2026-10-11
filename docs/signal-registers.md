@@ -1,6 +1,6 @@
 # Registers lost inside a signal handler
 
-Status: reproduced on stock FEX 2609.1 with `tests/signal-regs`; `patches/0008` fixes it (the test passes on the patched build).
+Status: reproduced on stock FEX 2609.1 with `eac-tests/signal-regs`; `patches/0008` fixes it (the test passes on the patched build).
 
 ## Symptom
 
@@ -8,7 +8,7 @@ A guest signal handler that is entered while its thread is inside a system call 
 itself: after the handler's first store into a page that also holds translated code (or after a second signal arrives
 inside it) the registers it had changed hold the values of the interrupted code again.
 
-`tests/signal-regs/signal_regs_test` shows it with a handler written in assembly that sets `r8` and `r9`, increments a counter
+`eac-tests/signal-regs/signal_regs_test` shows it with a handler written in assembly that sets `r8` and `r9`, increments a counter
 that sits in the same RWX section as the handler, makes two system calls and then reports `r8` and `r9`. The signal is raised in
 four ways, each twice:
 
@@ -18,14 +18,14 @@ four ways, each twice:
 | `setitimer`, asynchronous, arrives in translated code | yes |
 
 All three go through the same path: the signal is delivered while the thread is still in the C++ half of its own `syscall`.
-Measured with `tests/signal-regs` on unpatched FEX-2609.1 (and on Fedora's FEX 2604 package): all six `tgkill`/`kill`/`tkill`
+Measured with `eac-tests/signal-regs` on unpatched FEX-2609.1 (and on Fedora's FEX 2604 package): all six `tgkill`/`kill`/`tkill`
 runs fail, as do the four `tgkill`/`kill` runs whose handler takes a `SIGSEGV`; with patch 0008 every case passes.
 
 A second set of cases uses a handler that takes a `SIGSEGV` of its own (a load from address 0, stepped over by a `SIGSEGV`
 handler) before its first system call. That is the other consumer of the stale marker (a nested signal, no self-modifying code
 involved) and fails the same way on stock FEX when the outer signal was raised by `tgkill`/`kill` to self.
 
-On Linux every case passes (the same source builds for aarch64 as a reference run: `tests/signal-regs/build.sh native`).
+On Linux every case passes (the same source builds for aarch64 as a reference run: `eac-tests/signal-regs/build.sh native`).
 
 The same thing breaks a compiled handler: with `-O1` clang keeps the handler's `sig` argument in `r8d`
 across the whole body — the stores to its globals and six system calls before the last read of `r8d`

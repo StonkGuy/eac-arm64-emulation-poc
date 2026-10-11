@@ -1,8 +1,8 @@
-From dc3ee6fdcf3985a9b720dd1cccd79a75a975ad3a Mon Sep 17 00:00:00 2001
+From ee3ad7bfe5ea41bf4a045a23700ddaa56c3be30b Mon Sep 17 00:00:00 2001
 From: build <build@invalid>
 Date: Thu, 8 Oct 2026 20:37:07 +0300
-Subject: [PATCH 15/15] syscalls: restart_syscall returns -EINTR instead of
- aborting the process
+Subject: [PATCH] syscalls: restart_syscall returns -EINTR instead of aborting
+ the process
 
 Linux reaches restart_syscall only when the kernel restarted a signal-interrupted
 syscall. With no pending restart_block - the only state this emulated process can
@@ -20,7 +20,7 @@ Base: FEX-2610 14c92681 + patches 0001-0010.
  1 file changed, 7 insertions(+), 1 deletion(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Stubs.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Stubs.cpp
-index 2c3edeef1..f0d267ba8 100644
+index 2c3edee..f0d267b 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Stubs.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Stubs.cpp
 @@ -27,7 +27,13 @@ struct CpuStateFrame;
@@ -39,5 +39,5 @@ index 2c3edeef1..f0d267ba8 100644
    REGISTER_SYSCALL_IMPL(rseq, [](FEXCore::Core::CpuStateFrame* Frame, struct rseq* rseq, uint32_t rseq_len, int flags, uint32_t sig) -> uint64_t {
      // We don't support this
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

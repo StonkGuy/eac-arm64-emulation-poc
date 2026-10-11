@@ -1,4 +1,4 @@
-From b4261bbf0ea28ecc66710a259c1852233433044a Mon Sep 17 00:00:00 2001
+From 7b87d95278a1ef12a36b61adb2f87888a1aed423 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 00:51:12 +0300
 Subject: [PATCH] Signals: validate the guest frame destination before writing
@@ -20,7 +20,7 @@ handler) and raises it.
  3 files changed, 103 insertions(+)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 22d9f7289..a9a7bf830 100644
+index 22d9f72..a9a7bf8 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -917,6 +917,39 @@ void SignalDelegator::UninstallHostHandler(int Signal) {
@@ -64,7 +64,7 @@ index 22d9f7289..a9a7bf830 100644
    bool WasIgnored {};
    bool WasMasked {};
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
-index 5d3ad1a07..047061455 100644
+index 5d3ad1a..0470614 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
 @@ -106,6 +106,10 @@ public:
@@ -79,7 +79,7 @@ index 5d3ad1a07..047061455 100644
      // Get symbols from VDSO.
      VDSOPointers = FEX::VDSO::GetVDSOSymbols();
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
-index f51940f6a..deba62c48 100644
+index f51940f..deba62c 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 @@ -7,6 +7,7 @@ $end_info$
@@ -186,5 +186,5 @@ index f51940f6a..deba62c48 100644
    siginfo_t* guest_siginfo = reinterpret_cast<siginfo_t*>(SigInfoLocation);
    // Store where the host context lives in the guest stack.
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

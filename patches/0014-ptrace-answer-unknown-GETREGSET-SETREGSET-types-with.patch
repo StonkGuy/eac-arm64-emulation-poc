@@ -1,7 +1,7 @@
-From a560919110ad274750fe5e2e91812ceb3eb53491 Mon Sep 17 00:00:00 2001
+From 13282e08f62abde65890787fd361006c3b6ea75f Mon Sep 17 00:00:00 2001
 From: build <build@invalid>
 Date: Thu, 8 Oct 2026 20:37:07 +0300
-Subject: [PATCH 14/15] ptrace: answer unknown GETREGSET/SETREGSET types with
+Subject: [PATCH] ptrace: answer unknown GETREGSET/SETREGSET types with
  -EINVAL, and serve NT_X86_XSTATE
 
 kernel/ptrace.c ptrace_regset() looks the requested regset type up in the
@@ -23,7 +23,7 @@ Base: FEX-2610 14c92681 + patches 0001-0010.
  1 file changed, 43 insertions(+), 1 deletion(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp
-index 12cc5e178..ae708c6bc 100644
+index 78f76be..83efef3 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp
 @@ -32,6 +32,11 @@ $end_info$
@@ -65,7 +65,7 @@ index 12cc5e178..ae708c6bc 100644
    Remote* FpState(pid_t Pid) {
      std::lock_guard lk(RemotesLock);
      Remote* R = Lookup(Pid);
-@@ -871,7 +889,31 @@ bool HandleRequest(int Request, pid_t Pid, void* Addr, void* Data, uint64_t* Res
+@@ -877,7 +895,31 @@ bool HandleRequest(int Request, pid_t Pid, void* Addr, void* Data, uint64_t* Res
        *Result = 0;
        return true;
      }
@@ -99,5 +99,5 @@ index 12cc5e178..ae708c6bc 100644
  
    default: return false;
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 

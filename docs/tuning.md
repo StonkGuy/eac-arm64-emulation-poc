@@ -35,7 +35,7 @@ session (KDE Plasma): `busctl --user set-property org.kde.KWin /org/kde/KWin/Inp
 lookup-cache misses; 24 MHz ticks). `tools/fexstats.py` parses it. During VRChat's start-up (≈50 s of CPU) the
 translator accounts for only ~8 s and there are no SMC storms, so *cold-code translation is not the bottleneck*.
 
-Micro-benchmark (`tests/bench`, M2 P-core, FEX default config):
+Micro-benchmark (`eac-tests/bench`, M2 P-core, FEX default config):
 
 | test | distro FEX 2604 | patched 2609.1 | patched, `FEX_TSOENABLED=0` |
 |---|---|---|---|
@@ -78,7 +78,7 @@ above is the diagnostic result.
 ## 4. Code invalidation with many threads
 
 `mprotect` on a data page, 100k calls, 190 parked guest threads: stock FEX 790 ms, with `patches/0004` 32 ms (the same
-as with no extra threads; ~25× on this `tests/bench` churn test, ~22× per call: 7.9 µs vs 0.35 µs). Games with hundreds of threads that churn memory mappings (Unity, Wine, DXVK, anti-cheat) pay
+as with no extra threads; ~25× on this `eac-tests/bench` churn test, ~22× per call: 7.9 µs vs 0.35 µs). Games with hundreds of threads that churn memory mappings (Unity, Wine, DXVK, anti-cheat) pay
 for this on every call.
 
 ## 5. Per-thread view while playing

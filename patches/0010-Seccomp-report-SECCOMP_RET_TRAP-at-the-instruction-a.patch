@@ -1,4 +1,4 @@
-From f987d2965d9b9623396f148301c3d05a5e7eda4c Mon Sep 17 00:00:00 2001
+From bcfbe93bb4e49b509c296d06ca2720873c7ad224 Mon Sep 17 00:00:00 2001
 From: build <build@invalid>
 Date: Thu, 8 Oct 2026 19:40:38 +0300
 Subject: [PATCH] Seccomp: report SECCOMP_RET_TRAP at the instruction after the
@@ -20,7 +20,7 @@ Applies to the x86-64, non-realtime ia32 and realtime ia32 signal frame layouts.
  5 files changed, 47 insertions(+), 5 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h b/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
-index 4bc889ed7..42db7a70e 100644
+index 4bc889e..42db7a7 100644
 --- a/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
 +++ b/Source/Tools/LinuxEmulation/ArchHelpers/MContext.h
 @@ -44,6 +44,7 @@ struct X86ContextBackup {
@@ -40,7 +40,7 @@ index 4bc889ed7..42db7a70e 100644
    // Guest state
    int Signal;
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
-index 7b0e9f91c..d8f26866f 100644
+index 7b0e9f9..d8f2686 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
 @@ -325,6 +325,14 @@ SeccompEmulator::ExecuteFilter(FEXCore::Core::CpuStateFrame* Frame, uint64_t JIT
@@ -77,7 +77,7 @@ index 7b0e9f91c..d8f26866f 100644
      break;
    }
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 21d5e16f9..9c01c5f15 100644
+index 21d5e16..9c01c5f 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -175,6 +175,7 @@ ArchHelpers::Context::ContextBackup* SignalDelegator::StoreThreadState(FEXCore::
@@ -110,7 +110,7 @@ index 21d5e16f9..9c01c5f15 100644
    auto Frame = Thread->CurrentFrame;
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
-index 2401fe496..f9945a2e8 100644
+index 2401fe4..f9945a2 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 @@ -419,7 +419,11 @@ uint64_t SignalDelegator::SetupFrame_x64(FEXCore::Core::InternalThreadState* Thr
@@ -148,7 +148,7 @@ index 2401fe496..f9945a2e8 100644
    guest_uctx->uc.uc_mcontext.gregs[FEXCore::x86::FEX_REG_UESP] = Frame->State.gregs[FEXCore::X86State::REG_RSP];
    guest_uctx->uc.uc_mcontext.cr2 = 0;
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
-index 21bd969c3..86de8da99 100644
+index 21bd969..86de8da 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
 @@ -90,6 +90,14 @@ struct ThreadStateObject : public FEXCore::Allocator::FEXAllocOperators {
@@ -167,5 +167,5 @@ index 21bd969c3..86de8da99 100644
    uint32_t persona {};
  
 -- 
-2.44.0
+2.39.5 (Apple Git-154)
 
