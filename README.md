@@ -124,7 +124,8 @@ open: [docs/status.md](docs/status.md).
 (an issue, or a pull request with a test) instead of carrying a fix only in your own fork, so everyone gets it and the
 test suite covers it.
 
-This repository does not send patches to FEX-Emu, Proton or steamac itself and is not affiliated with them. If you have
+This repository does not send patches to FEX-Emu or Proton itself and is not affiliated with them (steamac changes
+are discussed with its maintainer directly). If you have
 reviewed a patch and think it is good enough for upstream, **you are welcome to submit it there yourself**: keep its
 test with it, follow the upstream project's own process, and mention where it came from.
 
