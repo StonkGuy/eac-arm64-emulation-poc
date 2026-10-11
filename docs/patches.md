@@ -11,7 +11,7 @@ grouped here by what they are for:
 | **B. Signal fidelity** | 0007, 0008, 0010 | guest signal handlers must behave like Linux; **0007** is what fixed the disconnects (0008 is a correctness fix in the same area, 0010 the seccomp/SIGSYS path) |
 | **C. Code-invalidation cost** | 0002, 0004 | 0002: without it the anti-cheat client never finishes loading; 0004: performance with ~200 threads |
 | **D. Diagnostics** | 0003, 0005, 0006, 0009 | **not fixes** — tools that made the bugs visible without ptrace |
-| **E. Kernel-fidelity gaps** | 0011, 0012, 0013, 0014, 0015 | the answers a real kernel gives for `arch_prctl`, the debug registers, `/proc/<pid>/status`, unknown regsets and `restart_syscall` |
+| **E. Kernel-fidelity gaps** | 0011, 0012, 0013, 0014, 0015, 0033 | the answers a real kernel gives for `arch_prctl`, the debug registers, `/proc/<pid>/status`, unknown regsets, `restart_syscall` and `/proc/<pid>/maps` |
 | **F. Signal frames and faults** | 0016–0020 | what Windows exception handling under Wine reads from and writes to a signal frame |
 | **G. Second title** | 0022–0026 | what a second title's anti-tamper bootstrapper (THE FINALS) observes: host stack per SIGSYS trap, faults on FEX's own mappings, single-step after `iretq`, a thread exiting on its signal stack |
 
@@ -207,8 +207,9 @@ own architecture with `build.sh native` for that reference run.
 | 0013 | `/proc/<pid>/status` `Seccomp:` and `TracerPid:` | `Seccomp:` is the process's own mode (0/1/2); `TracerPid:` is the pid of its own ptracer, 0 when untraced | no creator — the guest read FEX's own host seccomp mode and tracer | `tests/proc-status` |
 | 0014 | `PTRACE_GETREGSET`/`SETREGSET` type | `ptrace_regset()` returns `-EINVAL` for an unknown type, never `-EPERM`; `NT_X86_XSTATE` (0x202) is a known x86-64 regset and succeeds | only `NT_PRSTATUS`/`NT_PRFPREG` emulated, every other type `-EPERM` | `tests/ptrace-regsets` |
 | 0015 | `restart_syscall` | `do_no_restart_syscall()` returns `-EINTR` when no restart is pending | registered as a `SYSCALL_STUB` whose body is `ERROR_AND_DIE` — the call killed the process | `tests/restart-syscall` |
+| 0033 | `/proc/<pid>/maps` | every user mapping lies below `TASK_SIZE_MAX` ((1 << 47) − 4096); the only line above it is `[vsyscall]`; every file-backed ELF mapping is x86-64 | no creator — the guest read the host file, which also lists FEX, the AArch64 host libraries and the host vdso above 2^47. An EAC launcher module that picks a library from its child's maps to inject into chose a host library, the child died and the launcher reported `210 Unexpected error. (#1)` | `tests/proc-maps` |
 
-**Status.** All five are verified: each test passes natively and under the patched FEX and fails without its patch
+**Status.** 0011–0015 are verified: each test passes natively and under the patched FEX and fails without its patch
 (measured by building the series one patch at a time), and the Linux side is confirmed against kernel source. Known
 limits, all off VRChat's path:
 
@@ -222,6 +223,11 @@ limits, all off VRChat's path:
   line reads 0 whatever filter FEX itself inherited from the host (the guest's own `seccomp()` answers `-EINVAL` then).
 * **0014** — FEX does not model the xsave vector state, so the `NT_X86_XSTATE` shadow round-trips zero-filled rather
   than synthesising a fake `xstate_bv`. `NT_ARM_*` types stay `-EINVAL` (they do not exist in an x86-64 view).
+* **0033** — the `/proc/<pid>/maps` creator is **our patch code**; it runs only when a guest opens a maps file.
+  `smaps`, `smaps_rollup`, `numa_maps`, `task/<tid>/maps` and `map_files/` are still the host's, and FEX's own
+  reservations below 2^47 stay listed. Verified live: Mini Royale (Windows build via Proton) went from 210 to 301;
+  VRChat stays at 301 and joins a world. The native result is derived from kernel source
+  (`page_64_types.h`, `fs/proc/task_mmu.c`); a bare-metal reference run is still to do.
 
 ---
 

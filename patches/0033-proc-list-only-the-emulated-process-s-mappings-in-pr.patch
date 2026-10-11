@@ -1,0 +1,150 @@
+From 86b51056a31402cfe75c4724b6d537a8c3af337e Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 13:01:24 +0300
+Subject: [PATCH] proc: list only the emulated process's mappings in
+ /proc/<pid>/maps
+
+On x86-64 Linux every user mapping of a process lies below TASK_SIZE_MAX,
+(1 << 47) - PAGE_SIZE (arch/x86/include/asm/page_64_types.h, 4-level
+paging); the only line above it is the [vsyscall] gate page
+(fs/proc/task_mmu.c). Every file-backed ELF mapping is an x86-64 ELF.
+
+FEX had no creator for /proc/<pid>/maps, so a guest read the host file: next
+to the emulated process it lists FEX itself, the AArch64 host libraries
+(ld-linux-aarch64.so.1, libc.so.6, libstdc++.so.6, ...), the host vdso and
+FEX's own reservations, all at or above 2^47.
+
+The Easy Anti-Cheat launcher module served to some deployments (it follows
+the deployment, not the bootstrapper version: 1.9.3 and 1.9.4 alike) reads
+/proc/<child>/maps of the child it traces, picks a library mapping from
+it, PEEKDATAs its ELF image and injects a call into the child (the "/proc/self/fd/3" client load). Under FEX it picked a
+mapping in the host range (0xffff9386....), the injected call stopped with
+SIGSEGV, the launcher passed the signal on, the child died and the launcher
+reported "Launcher finished with: 210, 'Unexpected error. (#1)'" about 3 s
+after "Starting Wine module mapping". The module served to VRChat's
+deployment picked an x86-64 mapping (0x7ffff7....) and was not affected.
+With the host lines gone both inject successfully (301).
+
+Add a creator for /proc/<pid>/maps (any pid, including self) that passes the
+host file through and drops only the lines that start at or above
+TASK_SIZE_MAX. Lookups go through the opened fd's path, so the creator runs
+only when a guest opens a maps file; nothing else changes.
+
+Limits: /proc/<pid>/smaps, smaps_rollup, numa_maps, task/<tid>/maps and
+map_files/ are still the host's. FEX mappings below 2^47 (anonymous
+reservations of the emulated address space) stay listed. A process that maps
+above 2^47 with an explicit hint (5-level paging) is not modelled.
+
+Base: FEX-2610 14c92681 + patches 0001-0026.
+Upstream: FEX main 14c92681 (2026-10-07) has no /proc/<pid>/maps emulation.
+---
+ .../EmulatedFiles/EmulatedFiles.cpp           | 60 +++++++++++++++++++
+ .../EmulatedFiles/EmulatedFiles.h             |  1 +
+ 2 files changed, 61 insertions(+)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
+index e5267e863..885849e66 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
+@@ -25,6 +25,8 @@ $end_info$
+ 
+ #include <git_version.h>
+ 
++#include <cctype>
++#include <cstdlib>
+ #include <cstring>
+ #include <fcntl.h>
+ #include <filesystem>
+@@ -609,6 +611,22 @@ EmulatedFDManager::EmulatedFDManager(FEXCore::Context::Context* ctx)
+ 
+ EmulatedFDManager::~EmulatedFDManager() {}
+ 
++// "/proc/<pid>/maps" of any process, or "/proc/self/maps". Lookups use the path of the opened fd, so a
++// "/proc/self/maps" open arrives here in its "/proc/<pid>/maps" form.
++static bool IsProcMapsPath(const char* Path) {
++  if (strncmp(Path, "/proc/", 6) != 0) {
++    return false;
++  }
++  const char* P = Path + 6;
++  if (!isdigit(*P)) {
++    return strcmp(P, "self/maps") == 0;
++  }
++  while (isdigit(*P)) {
++    ++P;
++  }
++  return strcmp(P, "/maps") == 0;
++}
++
+ int32_t EmulatedFDManager::Open(const char* pathname, int flags, uint32_t mode) {
+   auto Creator = FDReadCreators.end();
+   if (pathname) {
+@@ -616,12 +634,54 @@ int32_t EmulatedFDManager::Open(const char* pathname, int flags, uint32_t mode)
+   }
+ 
+   if (Creator == FDReadCreators.end()) {
++    if (pathname && IsProcMapsPath(pathname)) {
++      return ProcMaps(CTX, AT_FDCWD, pathname, flags, mode);
++    }
+     return -1;
+   }
+ 
+   return Creator->second(CTX, AT_FDCWD, pathname, flags, mode);
+ }
+ 
++int32_t EmulatedFDManager::ProcMaps(FEXCore::Context::Context* ctx, int32_t fd, const char* pathname, int32_t flags, mode_t mode) {
++  int HostFD = ::open(pathname, O_RDONLY | O_CLOEXEC);
++  if (HostFD < 0) {
++    return -1;
++  }
++  fextl::string In;
++  char Buf[65536];
++  ssize_t Len;
++  while ((Len = ::read(HostFD, Buf, sizeof(Buf))) > 0) {
++    In.append(Buf, Len);
++  }
++  ::close(HostFD);
++
++  // On x86-64 every user mapping of a process lies below TASK_SIZE_MAX, (1 << 47) - PAGE_SIZE (the only line above it
++  // is [vsyscall], which FEX does not provide). Under FEX the host file also lists FEX itself, the AArch64 host
++  // libraries and the host vdso, all placed above that limit: they are not mappings of the emulated process, and a
++  // reader that resolves a library by name (e.g. "libc.so.6") would pick the host's AArch64 copy. Drop those lines;
++  // everything below the limit is passed through unchanged.
++  constexpr uint64_t X86_64TaskSizeMax = (1ULL << 47) - 4096;
++  fextl::string Out;
++  Out.reserve(In.size());
++  size_t Pos = 0;
++  while (Pos < In.size()) {
++    size_t Eol = In.find('\n', Pos);
++    const size_t End = Eol == fextl::string::npos ? In.size() : Eol + 1;
++    const uint64_t Start = strtoull(In.c_str() + Pos, nullptr, 16);
++    if (Start < X86_64TaskSizeMax) {
++      Out.append(In, Pos, End - Pos);
++    }
++    Pos = End;
++  }
++
++  int NewFD = GenTmpFD(pathname, flags);
++  write(NewFD, Out.data(), Out.size());
++  lseek(NewFD, 0, SEEK_SET);
++  SealTmpFD(NewFD);
++  return NewFD;
++}
++
+ int32_t EmulatedFDManager::ProcStatus(FEXCore::Context::Context* ctx, int32_t fd, const char* pathname, int32_t flags, mode_t mode) {
+   char Buf[8192];
+   ssize_t Len = 0;
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
+index fca0ff259..b98ef4bda 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.h
+@@ -34,6 +34,7 @@ private:
+   fextl::unordered_map<fextl::string, FDReadStringFunc> FDReadCreators;
+ 
+   static int32_t ProcAuxv(FEXCore::Context::Context* ctx, int32_t fd, const char* pathname, int32_t flags, mode_t mode);
++  static int32_t ProcMaps(FEXCore::Context::Context* ctx, int32_t fd, const char* pathname, int32_t flags, mode_t mode);
+   static int32_t ProcStatus(FEXCore::Context::Context* ctx, int32_t fd, const char* pathname, int32_t flags, mode_t mode);
+   const uint32_t ThreadsConfig;
+ };
+-- 
+2.44.0
+
