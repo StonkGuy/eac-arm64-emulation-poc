@@ -19,3 +19,4 @@ What stays here tests this repository's own scripts:
 | test | checks |
 |---|---|
 | [`set-launch-options/test.sh`](set-launch-options/test.sh) | `scripts/set-launch-options.sh` changes only VRChat's launch options in `localconfig.vdf` |
+| [`steamos-install/test.sh`](steamos-install/test.sh) | `scripts/steamos/install-fex-tool.sh` on a fake Steam FEX tool: install, backup, no-op reinstall, restore, incomplete stage refused, restore without a backup refused |
