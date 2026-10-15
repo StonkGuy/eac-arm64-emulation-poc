@@ -21,6 +21,10 @@ swapped for the patched build). Result, timings and limits: [docs/macos-port.md]
 the downstream fixes live in a separate fork, [StonkGuy/steamac](https://github.com/StonkGuy/steamac) (branch
 `fex-eac`).
 
+**Steam Frame.** Got here from a post about the Steam Frame? Start with [docs/steam-frame.md](docs/steam-frame.md): get a
+shell, build the patched FEX on the Frame with [`scripts/steamos/`](scripts/steamos), swap it into Steam's FEX tool,
+set the launch options. Reported working by another user; not tested here.
+
 What made it hard was not CPU speed but **fidelity**. The anti-cheat launcher injects its client into the game with
 `ptrace`, and the emulator has to behave like a real Linux kernel for `ptrace`, signals and `/proc` in ways nothing else
 had asked of it; later, VRChat's own network threads exposed two more places where FEX's signal handling differs from
@@ -87,6 +91,8 @@ Three different kinds of change are involved. Only the first is new code; nothin
 
 ## Quick start (the tested platform: Fedora Asahi Remix)
 
+On a Steam Frame (or another SteamOS arm64 device), follow [docs/steam-frame.md](docs/steam-frame.md) instead.
+
 ```sh
 sudo dnf install steam muvm fex-emu && steam          # base install, log in, install VRChat, launch it once
 scripts/build-fex.sh                                  # clones and builds StonkGuy/FEX tag eac-2610.2 into work/FEX
@@ -148,7 +154,7 @@ The Proton EAC runtime is the same launcher/client machinery for every game that
 is not VRChat-specific; each game still has its own EAC build, integrity checks and server-side policy. VRChat is
 verified end to end; Mini Royale's EAC launcher also reaches `301` with 0033 (the game itself was not played past its
 account prompt). Results differ from game to game: each title ships its own EAC build and checks, so an untested game
-may or may not work. Besides Asahi and the macOS guest above, other FEX hosts are untested, with the exception of the Steam Frame (findings from another user, @VirtuallyNoxide) — see [docs/other-platforms.md](docs/other-platforms.md).
+may or may not work. Besides Asahi and the macOS guest above, other FEX hosts are untested, with the exception of the Steam Frame (findings from another user, @VirtuallyNoxide; setup in [docs/steam-frame.md](docs/steam-frame.md)) — see [docs/other-platforms.md](docs/other-platforms.md).
 
 ## License
 
