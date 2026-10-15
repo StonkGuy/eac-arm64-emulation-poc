@@ -3,6 +3,13 @@
 **A proof of concept: running VRChat with genuine Easy Anti-Cheat on an arm64 Linux machine through FEX-Emu — and
 everything it took to get there.**
 
+> **Reminder: here be dragons, please be mindful of the associated risks.** I personally haven't observed any yet, but
+> this runs anti-cheat-protected games on a setup their developers don't support (an emulated x86 CPU, often inside a
+> VM). An anti-cheat or a game's terms of service may treat that as a violation, and an account action is possible; use
+> an account you can afford to lose. The scripts replace files inside Steam's FEX tool (`restore` puts Valve's back) and
+> nothing here is endorsed by Valve, Epic Games, the FEX-Emu project or any game developer. No warranty; see the
+> [License](#license).
+
 This is a standalone repository. It records the investigation and the changes to **FEX-Emu** (2610; developed on 2609.1) that were needed to
 bring up one x86-64 game with Epic's Easy Anti-Cheat for Linux/Proton on an arm64 host: the changes are kept as patch
 files you can apply yourself, with the tests that show what each one fixes and the diagnostic tools that found the
