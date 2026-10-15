@@ -10,7 +10,7 @@ not Asahi-specific. Everything else in this repository (muvm scripts, host tunin
 |---|---|---|
 | Apple M2 / Fedora Asahi Remix 44 (muvm, FEX-2610) | **tested** | 16K-page host: needs the muvm 4K guest. The machine most of this repository was measured on. |
 | Asahi Linux on other M-series hosts (M1, M3/M4) | untested | Expected to work the same way as the M2 setup (16K-page host, same muvm path), but it has not been tried. |
-| Valve Steam Frame (arm64 SteamOS, FEX + Proton) | **untested** | The macOS guest is this same SteamOS image and compatibility-tool mechanism, so the same FEX swap is expected to apply; unverified. 4K pages, no VM layer; rebuild the patched FEX and use it as the x86 interpreter. EAC behaviour on SteamOS/arm64 is unknown. |
+| Valve Steam Frame (arm64 SteamOS, FEX + Proton) | **reported** | The macOS guest is this same SteamOS image and compatibility-tool mechanism, so the same FEX swap is expected to apply; reported to be working with no changes outside replacing the default FEX. 4K pages, no VM layer; rebuild the patched FEX and use it as the x86 interpreter. Works as intended. |
 | Any arm64 Linux with 4K pages + FEX | **untested** | `scripts/build-fex.sh`, then register the patched binary with binfmt_misc. |
 | macOS on Apple silicon | **tested** (M2 MacBook Air, macOS 27.0) | The steamac libkrun guest (Valve's ARM64 SteamOS) with the patched FEX swapped into Steam's FEX compatibility tool; EAC `301`, Session Begin and world entry in three sessions. See [macos-port.md](macos-port.md). Other Macs untested. |
 
