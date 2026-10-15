@@ -148,7 +148,7 @@ The Proton EAC runtime is the same launcher/client machinery for every game that
 is not VRChat-specific; each game still has its own EAC build, integrity checks and server-side policy. VRChat is
 verified end to end; Mini Royale's EAC launcher also reaches `301` with 0033 (the game itself was not played past its
 account prompt). Results differ from game to game: each title ships its own EAC build and checks, so an untested game
-may or may not work. Besides Asahi and the macOS guest above, other FEX hosts (for instance Valve's Steam Frame) are untested — see [docs/other-platforms.md](docs/other-platforms.md).
+may or may not work. Besides Asahi and the macOS guest above, other FEX hosts are untested, with the exception of the Steam Frame (findings from another user, @VirtuallyNoxide) — see [docs/other-platforms.md](docs/other-platforms.md).
 
 ## License
 
