@@ -1,0 +1,77 @@
+name: Script and SteamOS build checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      native_build:
+        description: Build the pinned Steam Runtime and run its emulation regressions on ARM64
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test scripts without changing a real Steam installation
+        run: |
+          sh -n scripts/steamos/build-fex.sh scripts/steamos/install-fex-tool.sh
+          sh tests/set-launch-options/test.sh
+          sh tests/steamos-build/test.sh
+          sh tests/steamos-install/test.sh
+
+  steam-runtime:
+    if: github.event_name == 'workflow_dispatch' && inputs.native_build
+    needs: scripts
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      WORK: ${{ runner.temp }}/fex-eac-work
+      JOBS: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y clang-18 lld-18 ninja-build autoconf automake libtool pkg-config
+          mkdir -p "$RUNNER_TEMP/compiler" results
+          ln -s /usr/bin/clang-18 "$RUNNER_TEMP/compiler/clang"
+          ln -s /usr/bin/clang++-18 "$RUNNER_TEMP/compiler/clang++"
+          ln -s /usr/bin/ld.lld-18 "$RUNNER_TEMP/compiler/ld.lld"
+          echo "$RUNNER_TEMP/compiler" >> "$GITHUB_PATH"
+      - name: Build and stage the actual SteamOS script
+        run: |
+          set -o pipefail
+          clang --version > results/compiler.txt
+          uname -a > results/host.txt
+          git rev-parse HEAD > results/source-commit.txt
+          /usr/bin/time -v sh scripts/steamos/build-fex.sh 2>&1 | tee results/build.log
+          git -C "$WORK/FEX" submodule status --recursive > results/submodules.txt
+          du -sb "$WORK/FEX/.git" "$WORK/FEX" > results/build-disk.txt
+          ninja -C "$WORK/FEX/build-steam" -t commands > results/build-commands.txt
+      - name: Compare staged sizes and allocated ELF contents
+        run: |
+          DESTDIR="$RUNNER_TEMP/unstripped-stage" cmake --install "$WORK/FEX/build-steam" --component Runtime
+          python3 .github/scripts/stage-report.py "$RUNNER_TEMP/unstripped-stage" "$WORK/stage" > results/stage-report.json
+          cp -a "$WORK/stage" results/stage
+          "$WORK/stage/usr/bin/FEXGetConfig" --all-emu-info > results/emulation-info.txt
+      - name: Run the pinned, unmodified emulation regression suite
+        env:
+          FEX_ROOTFS: /
+        run: |
+          set -o pipefail
+          OUT="$RUNNER_TEMP/emulation-tests" sh "$WORK/FEX/eac-tests/run-all.sh" "$WORK/stage/usr/bin/FEX" 2>&1 | tee results/emulation-tests.txt
+      - name: Save validation evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-arm64-validation
+          path: |
+            results/
+            ${{ runner.temp }}/emulation-tests/*.log
+          retention-days: 14
