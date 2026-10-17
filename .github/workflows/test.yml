@@ -31,7 +31,6 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
-      WORK: ${{ runner.temp }}/fex-eac-work
       JOBS: 4
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +43,7 @@ jobs:
           ln -s /usr/bin/clang++-18 "$RUNNER_TEMP/compiler/clang++"
           ln -s /usr/bin/ld.lld-18 "$RUNNER_TEMP/compiler/ld.lld"
           echo "$RUNNER_TEMP/compiler" >> "$GITHUB_PATH"
+          echo "WORK=$RUNNER_TEMP/fex-eac-work" >> "$GITHUB_ENV"
       - name: Build and stage the actual SteamOS script
         run: |
           set -o pipefail
