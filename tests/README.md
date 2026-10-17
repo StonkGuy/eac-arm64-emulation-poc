@@ -20,3 +20,9 @@ What stays here tests this repository's own scripts:
 |---|---|
 | [`set-launch-options/test.sh`](set-launch-options/test.sh) | `scripts/set-launch-options.sh` changes only VRChat's launch options in `localconfig.vdf` |
 | [`steamos-install/test.sh`](steamos-install/test.sh) | `scripts/steamos/install-fex-tool.sh` on a fake Steam FEX tool: install, backup, no-op reinstall, restore, incomplete stage refused, restore without a backup refused |
+| [`steamos-build/test.sh`](steamos-build/test.sh) | `scripts/steamos/build-fex.sh` orchestration with mocked tools: pinned shallow checkout, selected Runtime dependencies and targets, staged stripping, incremental builds and job limits |
+
+GitHub Actions runs the isolated script tests on pushes and pull requests. A manual `test.yml` run with
+`native_build` enabled also builds the pinned Steam Runtime on ARM64, compares stripped staging against a normal
+install of the same build, and runs the unchanged FEX emulation regression suite. The freestanding tests receive a
+small environment because two self-reexec fixtures use fixed-size environment buffers.

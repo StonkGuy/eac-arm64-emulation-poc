@@ -56,6 +56,9 @@ sh install-fex-tool.sh restore   # put Valve's build back
 
 `install-fex-tool.sh` refuses to swap while a game is running (FEXServer holds the old binaries open): quit games first.
 
+The staged binaries have removable symbols stripped to reduce the installed size. Compiler outputs remain in
+`~/fex-eac-work/FEX/build-steam`; some targets already strip at link time, so this is not a full debug-symbol archive.
+
 ## 4. Launch options
 
 Steam > the game > Properties > Launch Options. For VRChat (app ID `438100`):
@@ -67,14 +70,35 @@ env EAC_LAUNCHERDIR=$HOME/.local/share/Steam/steamapps/compatdata/438100/pfx/dri
 For another EAC game, put its app ID in place of `438100`. If a game's Wine seccomp filter install fails (an
 anti-tamper client that crashes or hangs at a `syscall`), add `FEX_NEEDSSECCOMP=1`, a stock FEX option.
 
-Just in case: if VRChat stalls before joining a world, add `WINE_CPU_TOPOLOGY=16:` followed by 16 CPU ids, the Frame's
-real ones (`nproc`) repeated, e.g. `16:0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7`. It makes IL2CPP size its thread pool for 16
-CPUs; the macOS guest needs it, the Frame may not.
+`WINE_CPU_TOPOLOGY=16:...` fixes an IL2CPP thread-pool stall measured in the four-core Asahi/macOS VM. Leave it unset
+on Frame unless the same stall is confirmed there; more reported CPUs are not a general performance improvement.
+If testing it, use the Frame's actual available CPU IDs rather than the Asahi helper's guessed mapping.
 
 ## 5. After an update
 
 A Steam update of the FEX tool puts Valve's build back. `sh install-fex-tool.sh status` shows which one is active;
 run `sh install-fex-tool.sh` again to restore the patched one.
+
+## Performance on Frame
+
+The build already uses `TUNE_CPU=native`. Keep FEX's automatic CPU-feature and memory-ordering paths enabled:
+FEX specifically documents [Steam Frame's kernel acceleration for unaligned atomics](https://fex-emu.com/Scourge-of-emulation/).
+Disabling TSO or SMC checks can break games; the Apple M2 timings in [tuning.md](tuning.md) do not establish a Frame gain.
+
+For an optional hardware/configuration report from the installed tool:
+
+```sh
+"$HOME/.local/share/Steam/steamapps/common/FEX-Emu/usr/bin/FEXGetConfig" --all-emu-info
+```
+
+Use `--tso-emulation-info` for just the memory-ordering report. These describe the configuration seen from the shell;
+a game's own environment or application profile may differ.
+
+The `host-tune.sh`, muvm settings and 3072 MB DXVK caps in this repository address the tested Asahi VM's memory limits.
+Do not apply them as Frame defaults. Start with Valve's SteamOS settings and the launch options above, then measure
+one change at a time. Valve's [performance recording](https://partner.steamgames.com/doc/steamhardware/steamframe/debugging#performance-recording)
+captures CPU/GPU frame times, reprojection and power for local VR applications; compare the same scene and settings
+over repeated runs with warm caches. No Frame performance gain is claimed here without such a comparison.
 
 ## Troubleshooting
 
