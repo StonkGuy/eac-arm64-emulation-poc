@@ -61,11 +61,13 @@ jobs:
           cp -a "$WORK/stage" results/stage
           "$WORK/stage/usr/bin/FEXGetConfig" --all-emu-info > results/emulation-info.txt
       - name: Run the pinned, unmodified emulation regression suite
-        env:
-          FEX_ROOTFS: /
         run: |
           set -o pipefail
-          OUT="$RUNNER_TEMP/emulation-tests" sh "$WORK/FEX/eac-tests/run-all.sh" "$WORK/stage/usr/bin/FEX" 2>&1 | tee results/emulation-tests.txt
+          # Two freestanding tests re-exec through fixed-size environment buffers.
+          # Keep CI's long and numerous service variables out of their environment.
+          env -i HOME="$HOME" PATH="$RUNNER_TEMP/compiler:/usr/bin:/bin" FEX_ROOTFS=/ \
+            OUT="$RUNNER_TEMP/emulation-tests" sh "$WORK/FEX/eac-tests/run-all.sh" "$WORK/stage/usr/bin/FEX" \
+            2>&1 | tee results/emulation-tests.txt
       - name: Save validation evidence
         uses: actions/upload-artifact@v4
         if: always()
