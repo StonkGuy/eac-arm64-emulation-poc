@@ -25,8 +25,8 @@ host — but please report bugs you find here rather than only fixing them in a 
 **macOS.** The same patched FEX also runs VRChat with genuine EAC on an Apple M2 MacBook Air under macOS 27, inside
 the [steamac](https://github.com/fxgl/steamac) libkrun guest (Valve's ARM64 SteamOS, Steam's own FEX compatibility tool
 swapped for the patched build). Result, timings and limits: [docs/macos-port.md](docs/macos-port.md). Setup and
-the downstream fixes live in a separate fork, [StonkGuy/steamac](https://github.com/StonkGuy/steamac) (branch
-`fex-eac`).
+the downstream fixes, including a DXMT graphics path for Direct3D 11, live in a separate fork,
+[StonkGuy/steamac](https://github.com/StonkGuy/steamac) (`main` and its releases for players, `fex-eac` for development).
 
 **Steam Frame.** Got here from a post about the Steam Frame? Start with [docs/steam-frame.md](docs/steam-frame.md): get a
 shell, build the patched FEX on the Frame with [`scripts/steamos/`](scripts/steamos), swap it into Steam's FEX tool,

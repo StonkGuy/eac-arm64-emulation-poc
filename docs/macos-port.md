@@ -4,6 +4,20 @@
 in a libkrun guest, through the patched FEX-2610 from [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) (tag `eac-2610.2`). The deciding question was whether EAC accepts a
 macOS-libkrun guest; it does. Three sessions on 2026-10-08 all reached world entry. Only this one Mac was tested.
 
+## Current route
+
+| item | state |
+|---|---|
+| app | [StonkGuy/steamac](https://github.com/StonkGuy/steamac), a fork of steamac 1.9: `main` and release [v1.9-eac.1](https://github.com/StonkGuy/steamac/releases/tag/v1.9-eac.1) (ad-hoc signed DMG, GPL sources attached) for players, `fex-eac` for development |
+| FEX | the same patched build as here, pinned to tag `eac-2610.2` by the fork's `fex-eac/build-fex.sh`, installed into Steam's FEX tool in the guest |
+| graphics | two paths, chosen in the app: *Vulkan* (DXVK -> Venus -> KosmicKrisp, upstream steamac's path) and *DXMT* (Direct3D 11/10 through [DXMT](https://github.com/3Shain/dxmt), its Metal calls run on the Mac over a dedicated virtio-gpu context) |
+| VRChat with EAC | `301`, session and world on both paths; about 29-44 fps on Vulkan and 76-78 fps on DXMT on the same M2 (single runs, title-specific) |
+| VR | experimental, on the fork's `vr-polish` branch (Quest 3 over WiVRn) |
+
+The measurements in the rest of this page were taken on steamac 1.8.1/1.8.2 on the Vulkan path, before the DXMT path
+existed. Current numbers and limits are in the fork's
+[docs/eac-performance.md](https://github.com/StonkGuy/steamac/blob/main/docs/eac-performance.md).
+
 ## How it works
 
 | layer | what | kind |
