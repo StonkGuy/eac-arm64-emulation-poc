@@ -1,6 +1,6 @@
 # eac-arm64-emulation-poc [English](README.md)
 
-**概念验证：在 arm64 Linux 机器上通过 FEX-Emu 运行带正版 Easy Anti-Cheat 的 VRChat —— 以及为达成这一目标所做的一切。**
+**概念验证：在 arm64 Linux 机器上通过 FEX-Emu 运行带 Easy Anti-Cheat 的 VRChat —— 以及为达成这一目标所做的一切。**
 
 > **提醒：此处有龙（风险较高），请注意相关风险。** 我个人尚未观察到任何问题，但这是在开发者不支持的配置（模拟的 x86 CPU，通常还在虚拟机内）上运行受反作弊保护的游戏的尝试。反作弊或游戏服务条款可能将其视为违规，账号可能被采取行动；请使用你承受得起损失的账号。这些脚本会替换 Steam 的 FEX 工具内的文件（`restore` 会恢复 Valve 的原版文件），此处任何内容均未得到 Valve、Epic Games、FEX-Emu 项目或任何游戏开发商的认可。不提供任何担保；参见[许可协议](#license)。
 
