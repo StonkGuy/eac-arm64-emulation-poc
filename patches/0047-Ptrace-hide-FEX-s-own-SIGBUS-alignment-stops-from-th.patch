@@ -1,0 +1,67 @@
+From a7b22052b33c4741b912dd8f6f0d0588bc947444 Mon Sep 17 00:00:00 2001
+From: yungtry <yungtry@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 21:58:00 +0300
+Subject: [PATCH] Ptrace: hide FEX's own SIGBUS alignment stops from the tracer
+
+On arm64 an unaligned atomic or exclusive access in JIT code raises a
+host SIGBUS with si_code BUS_ADRALN. FEX's SigbusHandler emulates the
+access and resumes; the guest never sees it. In a traced process the
+host kernel reports every such SIGBUS to the tracer as a
+signal-delivery stop before FEX's handler runs. FixupWaitStatus already
+hides FEX's own SIGTRAP, SIGSEGV and SIGPROF stops. SIGBUS was missing.
+
+The Proton Easy Anti-Cheat launcher (bootstrapper 1.9.3, The Division 2)
+injects its client into the game process it starts under ptrace. While
+the client initialises it makes many unaligned atomic accesses. Its
+tracer saw one SIGBUS stop for each, 0x77f in wait4 (1000 in one
+launch), and passed each back with PTRACE_CONT. It then gave up:
+"Launcher finished with: 210, 'Unexpected error. (#2) (0)'" about 0.8 s
+after "Starting Wine module mapping", and EACLaunch.exe crashed on its
+error path.
+
+When a FEX tracee stops with SIGBUS, read its siginfo. If si_code is
+BUS_ADRALN, re-inject the signal with PTRACE_CONT and keep waiting, as
+for the other internal stops. x86-64 user code has no BUS_ADRALN fault
+(alignment checking with EFLAGS.AC needs CR0.AM, which Linux leaves
+off for user space). Every other SIGBUS, such as BUS_ADRERR from a
+mapping past the end of its file, is the guest's and stays visible.
+
+Result: the launcher ends with "301, 'Easy Anti-Cheat successfully
+loaded in-game'" and The Division 2 loads into the world.
+
+Limits: only wait4 is filtered, as before; waitid is still passed
+through.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp     | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp
+index 83efef3..99b4e4b 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/PtraceEmu.cpp
+@@ -672,6 +672,20 @@ bool FixupWaitStatus(pid_t Pid, int* Status) {
+     return true;
+   }
+ 
++  // On arm64 FEX also takes a host SIGBUS (BUS_ADRALN) for an unaligned atomic or exclusive access in JIT code and
++  // emulates the access in its handler (SigbusHandler in SignalDelegator.cpp); the guest never sees it. x86-64 user code
++  // has no such fault, so a BUS_ADRALN stop of a FEX tracee is always FEX's own. Code that does many such accesses (the
++  // Easy Anti-Cheat client while it initialises in the game process) otherwise shows its tracer a stream of SIGBUS
++  // stops; the launcher passes each one back and gives up after 1000 with "Unexpected error. (#2)". Any other SIGBUS
++  // (BUS_ADRERR from a mapping past the end of its file, ...) is the guest's and stays visible.
++  if ((St >> 16) == 0 && WSTOPSIG(St) == SIGBUS && IsFexTracee(Pid)) {
++    siginfo_t Info {};
++    if (HostPtrace(PTRACE_GETSIGINFO, Pid, nullptr, &Info) == 0 && Info.si_code == BUS_ADRALN) {
++      HostPtrace(PTRACE_CONT, Pid, nullptr, reinterpret_cast<void*>(static_cast<uintptr_t>(SIGBUS)));
++      return true;
++    }
++  }
++
+   if ((St >> 16) == 0 && WSTOPSIG(St) == SIGPROF && IsFexTracee(Pid)) {
+     // FEX's own sampling profiler signal: never visible to the guest tracer.
+     HostPtrace(PTRACE_CONT, Pid, nullptr, nullptr);
+-- 
+2.39.5 (Apple Git-154)
+

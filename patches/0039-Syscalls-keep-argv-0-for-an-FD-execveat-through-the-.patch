@@ -1,0 +1,43 @@
+From 03ca63db4de0f98e2b5919d69fe3284d926b6b5f Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 12:11:29 +0300
+Subject: [PATCH] Syscalls: keep argv[0] for an FD execveat through the FEX
+ loader
+
+An execveat(fd, "", argv, envp, AT_EMPTY_PATH) that binfmt_misc can't take
+(no FEX registration, or an FD_CLOEXEC fd that has to be copied) is
+handed to the next FEX through FEX_EXECVEFD. That FEX loads from the FD
+and uses the binfmt preserve-argv0 layout (FEX <path> <argv0> <argv1>...),
+but the execve handler only kept the caller's argv[0] for the path-backed
+loader FD, so the program saw its argv shifted by one: glibc's fexecve()
+under FEX passed {"a", "b"} for {"argv0", "a", "b"}.
+
+Keep argv[0] for every FD-backed load. A direct execveat (binfmt_misc
+registered, FD without FD_CLOEXEC) is unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
+index 207c33b..e27c598 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
+@@ -447,9 +447,10 @@ uint64_t ExecveHandler(FEXCore::Core::CpuStateFrame* Frame, const char* pathname
+ 
+     // It is valid to provide nullptr first argument.
+     if (*OldArgv) {
+-      // The direct fallback uses the executable path as argv[0]. An FD-backed load uses the
+-      // binfmt preserve-argv0 layout, so the caller-supplied argv[0] has to stay in the vector.
+-      if (!NeedsLoaderFD) {
++      // The direct fallback uses the executable path as argv[0]. An FD-backed load (an FD execveat or
++      // the path-backed loader FD) uses the binfmt preserve-argv0 layout, so the caller-supplied
++      // argv[0] has to stay in the vector.
++      if (!IsFDExec && !NeedsLoaderFD) {
+         ++OldArgv;
+       }
+       while (*OldArgv) {
+-- 
+2.39.5 (Apple Git-154)
+

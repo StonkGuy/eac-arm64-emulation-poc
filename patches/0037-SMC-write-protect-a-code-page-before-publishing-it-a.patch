@@ -1,0 +1,124 @@
+From 2c461f58fe6ae1211b30210db4a5961b9d2c000a Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 18:08:16 +0300
+Subject: [PATCH] SMC: write-protect a code page before publishing it as
+ translated
+
+x86 detects stores to code: on P6 and later a store by a thread to an
+instruction it executes later, even one already prefetched, takes effect, and a
+jump or serialising instruction in between is only needed for the 486 (Intel
+SDM Vol. 3A 9.1.3/11.6). A thread that rewrites code on its own page always
+runs the new code.
+
+Under SMCChecks=mtrack FEX write-protects a guest page when it first publishes
+translated code from it: CompileBlock called AddBlockExecutableRange and, only
+if the page held no code yet, MarkGuestExecutableRange. A second thread that
+compiled from the same page in between saw the page registered, skipped the
+protection and ran its block while the page was still writable. Its stores to
+the page then took no fault, nothing was invalidated, and it went on executing
+translations of the old bytes until the next fault. With two threads running
+code from a page one of them rewrites (a JIT, a packer, an unpacking stub with
+a worker thread) this happens all the time: eac-tests/smc-same-page's +thread
+cases fail on every run with FEX_SMCHOTPAGEFAULTS=0 and on some runs with the
+default (the page usually turns hot first and is verified instead).
+
+Now a page is protected before it is published: CompileBlock (and the code
+cache hit path) asks the lookup cache whether the page already holds code
+(HasBlockExecutableRange, under the read lock), protects it if not, and then
+adds the block. A thread that finds the page registered can rely on the
+protection already being in place; invalidation can't run in between since it
+takes CodeInvalidationMutex exclusively. Two threads racing on an empty page
+may both mprotect it, which is harmless.
+
+Cost: one read-locked map lookup per code page of each compiled block, only on
+the compile path; nothing changes for translated code or for pages that are
+already registered.
+
+Limits: covers the publish ordering only. Same-page SMC by a single thread
+already worked (inline SMC, single-instruction recompile); the infinite
+unprotect/single-step loop described in upstream PR #5089 did not reproduce
+with any single- or multi-threaded case of the test, and this change is not
+that PR's fix.
+
+Base: eac-2610 0d13aba (FEX-2610 14c92681 + patches).
+Upstream: PR #5089 attempted a same-page SMC fix (skip re-protecting the page
+during the single step), not merged. FEX main 14c92681 (2026-10-07) has the
+same AddBlockExecutableRange-then-MarkGuestExecutableRange order in
+CompileBlock.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ FEXCore/Source/Interface/Core/Core.cpp      | 11 +++++++++--
+ FEXCore/Source/Interface/Core/LookupCache.h | 12 ++++++++++++
+ 2 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+index 922d1b4..2a07501 100644
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@ -887,9 +887,11 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+       auto LoadedCode = Thread->CPUBackend->LoadCachedCode(Hit->HostCode);
+       if (LoadedCode.BlockBegin) {
+         for (auto& CodePage : Hit->GuestPages) {
+-          if (Thread->LookupCache->AddBlockExecutableRange(Thread, Hit->EntryPointRIPs, CodePage, FEXCore::Utils::FEX_PAGE_SIZE)) {
++          // Protect before publishing, see the comment at the JIT path below.
++          if (!Thread->LookupCache->HasBlockExecutableRange(CodePage)) {
+             SyscallHandler->MarkGuestExecutableRange(Thread, CodePage, FEXCore::Utils::FEX_PAGE_SIZE);
+           }
++          Thread->LookupCache->AddBlockExecutableRange(Thread, Hit->EntryPointRIPs, CodePage, FEXCore::Utils::FEX_PAGE_SIZE);
+         }
+ 
+         LOGMAN_THROW_A_FMT(Hit->EntryPointRIPs.size() == Hit->EntryPointHostOffsets.size(), "Mismatched Disk Cache entrypoint pairs!");
+@@ -979,13 +981,18 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+   if (NeedsAddGuestCodeRanges) {
+     // Track in the guest to host map all entrypoints for all pages the compiled block touches, if any page didn't previously
+     // contain code, inform the frontend so it can setup SMC detection.
++    // The page must be protected before it is published as containing code: another thread compiling from the same
++    // page skips the protection once it sees the page registered, and would otherwise run its block (and write to the
++    // page without faulting) before the first thread's mprotect lands. Invalidation can't interleave here, it takes
++    // CodeInvalidationMutex exclusively.
+     auto BlockInfo = Thread->FrontendDecoder->GetDecodedBlockInfo();
+     CodePages.reserve(BlockInfo->CodePages.size());
+     CodePages.insert(CodePages.end(), BlockInfo->CodePages.begin(), BlockInfo->CodePages.end());
+     for (auto CodePage : BlockInfo->CodePages) {
+-      if (Thread->LookupCache->AddBlockExecutableRange(Thread, BlockInfo->EntryPoints, CodePage, FEXCore::Utils::FEX_PAGE_SIZE)) {
++      if (!Thread->LookupCache->HasBlockExecutableRange(CodePage)) {
+         SyscallHandler->MarkGuestExecutableRange(Thread, CodePage, FEXCore::Utils::FEX_PAGE_SIZE);
+       }
++      Thread->LookupCache->AddBlockExecutableRange(Thread, BlockInfo->EntryPoints, CodePage, FEXCore::Utils::FEX_PAGE_SIZE);
+     }
+   }
+ 
+diff --git a/FEXCore/Source/Interface/Core/LookupCache.h b/FEXCore/Source/Interface/Core/LookupCache.h
+index d42c792..9816299 100644
+--- a/FEXCore/Source/Interface/Core/LookupCache.h
++++ b/FEXCore/Source/Interface/Core/LookupCache.h
+@@ -147,6 +147,11 @@ struct GuestToHostMap {
+     BlockLinks->insert({{GuestDestination, HostLink}, delinker});
+   }
+ 
++  bool HasBlockExecutableRange(uint64_t Page, const LookupCacheReadLockToken&) const {
++    auto it = CodePages.find(Page >> 12);
++    return it != CodePages.end() && !it->second.empty();
++  }
++
+   bool AddBlockExecutableRange(const std::ranges::input_range auto& Addresses, uint64_t Start, uint64_t Length, const LookupCacheWriteLockToken&) {
+     bool rv = false;
+ 
+@@ -285,6 +290,13 @@ public:
+ 
+   GuestToHostMap* Shared = nullptr;
+ 
++  // Returns true if the page already holds translated code. SMC tracking write-protects a page before its first block
++  // is published with AddBlockExecutableRange, so a page that holds code is protected (or verified) already.
++  bool HasBlockExecutableRange(uint64_t Page) {
++    auto lk = Shared->AcquireReadLock();
++    return Shared->HasBlockExecutableRange(Page, lk);
++  }
++
+   // Appends a list of Block {Address} to CodePages [Start, Start + Length)
+   // Returns true if new pages are marked as containing code
+   bool AddBlockExecutableRange(FEXCore::Core::InternalThreadState* Thread, auto& Addresses, uint64_t Start, uint64_t Length) {
+-- 
+2.39.5 (Apple Git-154)
+

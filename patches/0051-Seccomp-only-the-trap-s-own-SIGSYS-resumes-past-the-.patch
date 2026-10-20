@@ -1,0 +1,52 @@
+From 40074b032047a7685558e0f05b31e72b933e1876 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 21:39:57 +0300
+Subject: [PATCH] Seccomp: only the trap's own SIGSYS resumes past the trapped
+ syscall
+
+The SECCOMP_RET_TRAP path records the address after the syscall in
+the thread (SeccompTrapRIP) and the next guest signal frame takes it.
+An asynchronous signal arriving between the filter's decision and the
+SIGSYS delivery (Wine signalling a thread for NtGetContextThread or an
+APC while it is in its SIGSYS syscall dispatcher) took it instead: its
+handler returned past the syscall and the trap was skipped, the SIGSYS
+never reaching the guest. Only a SIGSYS with si_code SYS_SECCOMP
+consumes the address now.
+
+Upstream state: SeccompTrapRIP comes from this branch's 'Seccomp:
+report SECCOMP_RET_TRAP at the instruction after the syscall'; FEX
+main has no such field.
+
+Test: eac-tests/signal-race (new check 'every trapped syscall
+delivered exactly one SIGSYS'): eac-2610 loses SIGSYS in 14 of 60 runs
+on a Neoverse N2 runner (up to 483 of 488 traps), 0 of 60 with this
+change; native x86-64 30/30.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp     | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+index 07af884..451801c 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+@@ -333,8 +333,13 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
+   // itself, so the ucontext RIP now differs from it: rt_sigreturn then takes the path that restores the handler's
+   // registers and resumes at the ucontext RIP, instead of the path that resets to the interrupted state and re-runs
+   // the syscall (discarding the handler's return value). See SeccompEmulator for the kernel semantics.
+-  ContextBackup->SeccompTrapRIP = ThreadObject->SeccompTrapRIP;
+-  ThreadObject->SeccompTrapRIP = 0;
++  // Only the trap's own SIGSYS takes it: an asynchronous signal that arrives between the filter deciding to trap and
++  // the SIGSYS being delivered must see the interrupted state (RIP at the `syscall`), otherwise its handler returns
++  // past the syscall and the trap is skipped without its SIGSYS ever reaching the guest.
++  if (Signal == SIGSYS && static_cast<siginfo_t*>(info)->si_code == 1 /* SYS_SECCOMP */) {
++    ContextBackup->SeccompTrapRIP = ThreadObject->SeccompTrapRIP;
++    ThreadObject->SeccompTrapRIP = 0;
++  }
+   ContextBackup->SavedJITStackSP = ThreadObject->JITStackSP;
+ 
+   auto Frame = Thread->CurrentFrame;
+-- 
+2.39.5 (Apple Git-154)
+

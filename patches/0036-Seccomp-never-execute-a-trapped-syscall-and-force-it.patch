@@ -1,0 +1,131 @@
+From c50a7460b5c28b9c5f0b5207c4473b387b4e0062 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 17:03:36 +0300
+Subject: [PATCH] Seccomp: never execute a trapped syscall, and force its
+ SIGSYS like Linux
+
+Linux handles SECCOMP_RET_TRAP in __seccomp_filter() (kernel/seccomp.c) by
+rolling the registers back (syscall_rollback(): RAX = the syscall number),
+calling force_sig_seccomp() and skipping the syscall. force_sig_seccomp()
+sends SIGSYS with force_sig_info_to_task(..., HANDLER_CURRENT)
+(kernel/signal.c): if the thread blocks or ignores SIGSYS, the disposition is
+reset to SIG_DFL and the signal unblocked, so the process dies from it. The
+trapped syscall never runs.
+
+FEX queued the SIGSYS as an ordinary asynchronous signal and returned "no early
+result" from the filter, so the syscall handler went on to execute the
+syscall. While the SIGSYS is delivered at once this is hidden: the guest
+handler runs inside QueueSignal and its rt_sigreturn abandons the syscall
+handler (0010, 0022). When the guest has SIGSYS blocked, the host handler only
+records it as pending, and the trapped syscall ran as a Linux syscall with its
+result returned to the guest, which carried on; the SIGSYS arrived whenever
+the mask next allowed it, at an unrelated instruction. The same applies to a
+SIGSYS that lands in a signal-deferring section.
+
+SECCOMP_RET_TRAP now resets a blocked or ignored guest SIGSYS to SIG_DFL and
+unblocks it before queueing (SignalDelegator::PrepareForcedGuestSignal, the
+force_sig_info_to_task() rule), and returns an early result so the syscall is
+skipped, with RAX = the syscall number as after syscall_rollback(). Only the
+SECCOMP_RET_TRAP path changes; nothing runs for syscalls a filter allows or
+for processes without a filter.
+
+Consumer: Wine's seccomp filter (FEX_NEEDSSECCOMP=1) traps the raw NT
+syscalls of Windows code; executed untrapped, an NT service number runs as an
+unrelated Linux syscall (0x50 NtProtectVirtualMemory as chdir, 0x43 NtContinue
+as shmdt). Found while analysing THE FINALS' exiting-thread loop, where the
+raw NtProtectVirtualMemory trap stops appearing after 15 iterations although
+the loop keeps calling it; whether SIGSYS is blocked there under FEX is not
+established, so this is a candidate for that stall, not its proven cause.
+
+Test: eac-tests/seccomp-trap-blocked (run with FEX_NEEDSSECCOMP=1) traps
+write() to a pipe with SIGSYS handled, blocked and ignored. It passes on x86-64
+Linux 6.19; on eac-2610.2 the blocked case fails (the child survives with exit
+42 and the byte is written); with this change it passes. eac-tests/run-all.sh
+is otherwise unchanged (pop-fault still the expected FAIL).
+
+Limits: an ignored SIGSYS already killed the process before this change (the
+queued signal took the host default action), only the skipped syscall is new
+there. SECCOMP_RET_KILL_THREAD/KILL_PROCESS are unchanged.
+
+Base: FEX-2610 14c92681 + eac-2610.2.
+Upstream: FEX main 14c92681 (2026-10-07) queues the SIGSYS and breaks out of
+the switch the same way, so the trapped syscall is executed there too.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxSyscalls/Seccomp/SeccompEmulator.cpp |  9 ++++++++-
+ .../LinuxSyscalls/SignalDelegator.cpp         | 20 +++++++++++++++++++
+ .../LinuxSyscalls/SignalDelegator.h           |  5 +++++
+ 3 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
+index d8f2686..0322a78 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
+@@ -453,8 +453,15 @@ SeccompEmulator::ExecuteFilter(FEXCore::Core::CpuStateFrame* Frame, uint64_t JIT
+ 
+     Thread->SeccompTrapRIP = PostSyscallRIP;
+ 
++    // Linux raises the trap with force_sig_seccomp(): a SIGSYS the thread blocks or ignores is reset to SIG_DFL and
++    // unblocked, so the process dies from it rather than continuing with the signal pending.
++    SignalDelegation->PrepareForcedGuestSignal(Thread, SIGSYS);
+     SignalDelegation->QueueSignal(::getpid(), ::gettid(), SIGSYS, &Info, true);
+-    break;
++
++    // A trapped syscall is never executed: the kernel skips it after syscall_rollback(), which leaves the syscall number
++    // in RAX. Normally the guest handler has already run inside QueueSignal and its rt_sigreturn does not come back here;
++    // this return covers a SIGSYS that could not be delivered synchronously (a signal-deferring section).
++    return {true, Args->Argument[0]};
+   }
+   case SECCOMP_RET_ERRNO: {
+     // errno return is clamped.
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+index 7721996..98d0752 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+@@ -1001,6 +1001,26 @@ void SignalDelegator::QueueSignal(pid_t tgid, pid_t tid, int Signal, siginfo_t*
+   }
+ }
+ 
++void SignalDelegator::PrepareForcedGuestSignal(FEX::HLE::ThreadStateObject* Thread, int Signal) {
++  const uint64_t SignalMask = 1ULL << (Signal - 1);
++  const bool Blocked = Thread->SignalInfo.CurrentSignalMask.Val & SignalMask;
++
++  GuestSigAction Action {};
++  RegisterGuestSignalHandler(Signal, nullptr, &Action);
++  const bool Ignored = Action.sigaction_handler.handler == SIG_IGN;
++
++  if (!Blocked && !Ignored) {
++    return;
++  }
++
++  // force_sig_info_to_task(): a forced signal that is blocked or ignored gets the default disposition and is unblocked.
++  Action.sigaction_handler.handler = SIG_DFL;
++  RegisterGuestSignalHandler(Signal, &Action, nullptr);
++  if (Blocked) {
++    GuestSigProcMask(Thread, SIG_UNBLOCK, &SignalMask, nullptr);
++  }
++}
++
+ SignalDelegator::SignalDelegator(FEXCore::Context::Context* _CTX, const std::string_view ApplicationName, bool SupportsAVX, bool SupportsSVE256)
+   : CTX {_CTX}
+   , ApplicationName {ApplicationName}
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
+index 236da05..215c8e6 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.h
+@@ -109,6 +109,11 @@ public:
+   void UninstallHostHandler(int Signal);
+   void QueueSignal(pid_t tgid, pid_t tid, int Signal, siginfo_t* info, bool IgnoreMask);
+ 
++  // Prepare a signal that Linux forces on the current thread (force_sig_info_to_task() with HANDLER_CURRENT, e.g. the
++  // SIGSYS of a SECCOMP_RET_TRAP): when the guest blocks or ignores it, its disposition is reset to SIG_DFL and it is
++  // unblocked, so the default action is taken instead of the signal staying pending or being dropped.
++  void PrepareForcedGuestSignal(FEX::HLE::ThreadStateObject* Thread, int Signal);
++
+   // Terminate this thread the way Linux's force_sigsegv does: force the SIGSEGV disposition to SIG_DFL, log the
+   // offending address once, clean up, and die from SIGSEGV. Used when the guest signal frame cannot be written.
+   [[noreturn]] void ForceGuestSigSegv(uint64_t BadSP);
+-- 
+2.39.5 (Apple Git-154)
+

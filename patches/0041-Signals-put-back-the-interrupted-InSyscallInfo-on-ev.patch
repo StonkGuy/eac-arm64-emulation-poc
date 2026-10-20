@@ -1,0 +1,157 @@
+From 3a9ca6b154acc5f0fc792ff0e4a6ccd6e2eb90fa Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 18:11:17 +0300
+Subject: [PATCH] Signals: put back the interrupted InSyscallInfo on every
+ rt_sigreturn
+
+What Linux does: a signal frame goes at the interrupted RSP minus the red zone (get_sigframe() in
+arch/x86/kernel/signal.c). Nothing above the interrupted RSP is written, however many signals a thread takes.
+
+What FEX did: rt_sigreturn is a guest syscall, so the Syscall op marks the frame "in a syscall" (InSyscallInfo =
+the mask of already-spilled static registers) before calling the handler. A normal return (RIP unchanged) resumes
+the interrupted host PC directly, so the op's epilogue that clears the marker never runs. RestoreFrame_* only
+restored the delivery-time value in the "guest changed RIP" branch. The next asynchronous signal in JIT code then
+passed the stale mask to SpillSRA, skipped spilling the live registers (RSP included) and built the guest frame
+from the state saved at the previous delivery: a higher, stale RSP, over live frames of the current call chain.
+Go async preemption and .NET GC suspension hit this; a worker with a deep patterned call chain and SIGUSR1 every
+20 us is corrupted within 3-6 signals.
+
+Fix: RestoreThreadState puts back the InSyscallInfo of the interrupted code for every frame type: the value
+cleared on entry from the C++ half of a syscall handler (CONTEXT_FLAG_SYSCALLINFO_CLEARED, as before), otherwise
+the value saved at delivery (0 outside JIT code). The "RIP changed" branches still override it as before. One
+store per rt_sigreturn; nothing on any other path.
+
+Tests: eac-tests/sigreturn-syscallinfo (freestanding, 100000 signals) and FEXLinuxTests signal/sigreturn_syscallinfo.
+Before: FAIL after 3-6 signals (frame corrupted at depth 3). After: PASS 3/3 runs; eac-tests/run-all.sh 23/23 as
+expected (before: 22/23, only the new test failing). Native x86-64 (kernel 6.19):
+PASS, 100000 signals.
+
+Limits: none known; the RIP-changed path is unchanged.
+
+Upstream: issue #5901 (open, same root cause and the same fix in the issue's proposed patch, placed per frame
+type there). FEX main as triaged at 14c9268 still restores InSyscallInfo only in the RIP-changed branch.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxSyscalls/SignalDelegator.cpp         | 11 ++-
+ .../tests/signal/sigreturn_syscallinfo.cpp    | 86 +++++++++++++++++++
+ 2 files changed, 93 insertions(+), 4 deletions(-)
+ create mode 100644 unittests/FEXLinuxTests/tests/signal/sigreturn_syscallinfo.cpp
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+index 98d0752..d20a518 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+@@ -264,10 +264,13 @@ void SignalDelegator::RestoreThreadState(FEXCore::Core::InternalThreadState* Thr
+ 
+   // Restore host state
+   ArchHelpers::Context::RestoreContext(ucontext, Context);
+-  if (Context->Flags & ArchHelpers::Context::ContextFlags::CONTEXT_FLAG_SYSCALLINFO_CLEARED) {
+-    // Back in the syscall handler the guest signal interrupted.
+-    Thread->CurrentFrame->InSyscallInfo = Context->ClearedSyscallInfo;
+-  }
++  // Put back the InSyscallInfo of the interrupted code. The current value belongs to the rt_sigreturn syscall op, whose
++  // epilogue that clears it never runs: execution resumes at the interrupted host PC instead. Left in place, the next
++  // signal in JIT code would skip spilling the live static registers (RSP included) and build its frame from stale state.
++  // A guest that changed the RIP goes back to the dispatcher instead; RestoreFrame_* then overrides this.
++  Thread->CurrentFrame->InSyscallInfo = (Context->Flags & ArchHelpers::Context::ContextFlags::CONTEXT_FLAG_SYSCALLINFO_CLEARED) ?
++                                          Context->ClearedSyscallInfo :
++                                          Context->InSyscallInfo;
+ 
+   {
+     auto ThreadObject = FEX::HLE::ThreadManager::GetStateObjectFromFEXCoreThread(Thread);
+diff --git a/unittests/FEXLinuxTests/tests/signal/sigreturn_syscallinfo.cpp b/unittests/FEXLinuxTests/tests/signal/sigreturn_syscallinfo.cpp
+new file mode 100644
+index 0000000..7a6b292
+--- /dev/null
++++ b/unittests/FEXLinuxTests/tests/signal/sigreturn_syscallinfo.cpp
+@@ -0,0 +1,86 @@
++// SPDX-License-Identifier: MIT
++#include <catch2/catch_test_macros.hpp>
++
++#include <atomic>
++#include <cstdint>
++#include <pthread.h>
++#include <signal.h>
++#include <time.h>
++
++// A normal rt_sigreturn (RIP unchanged) must not leave the frame marked as being inside a syscall.
++// Otherwise the next asynchronous signal in JIT code skips spilling the live static registers, RSP included, and the
++// guest signal frame is built from the RSP of the previous delivery, over live stack frames.
++// A worker alternates a shallow loop with a deep call chain whose frames hold a pattern while it is sent SIGUSR1.
++
++namespace {
++constexpr int Depth = 12;
++constexpr int Words = 96;
++constexpr int Signals = 20000;
++
++std::atomic<bool> Stop {};
++std::atomic<uint64_t> SignalsSeen {};
++std::atomic<uint64_t> Corrupted {};
++
++uint64_t Pattern(int d, int i) {
++  return 0x5a5a000000000000ULL ^ (uint64_t(d) << 32) ^ uint64_t(i);
++}
++
++void Handler(int, siginfo_t*, void*) {
++  SignalsSeen.fetch_add(1, std::memory_order_relaxed);
++}
++
++void Spin(uint64_t Iters) {
++  volatile uint64_t x = 0;
++  for (uint64_t i = 0; i < Iters; i++) {
++    x += i;
++  }
++}
++
++__attribute__((noinline)) void Deep(int d) {
++  volatile uint64_t Buf[Words];
++  for (int i = 0; i < Words; i++) {
++    Buf[i] = Pattern(d, i);
++  }
++  if (d < Depth) {
++    Deep(d + 1);
++  } else {
++    Spin(20000);
++  }
++  for (int i = 0; i < Words; i++) {
++    if (Buf[i] != Pattern(d, i)) {
++      Corrupted.fetch_add(1, std::memory_order_relaxed);
++      Buf[i] = Pattern(d, i);
++    }
++  }
++}
++
++void* Worker(void*) {
++  while (!Stop.load(std::memory_order_relaxed) && Corrupted.load(std::memory_order_relaxed) == 0) {
++    Spin(20000);
++    Deep(1);
++  }
++  return nullptr;
++}
++} // namespace
++
++TEST_CASE("Signal frames after a normal rt_sigreturn") {
++  struct sigaction act {};
++  act.sa_sigaction = Handler;
++  act.sa_flags = SA_SIGINFO | SA_RESTART;
++  sigemptyset(&act.sa_mask);
++  REQUIRE(sigaction(SIGUSR1, &act, nullptr) == 0);
++
++  pthread_t Thread;
++  REQUIRE(pthread_create(&Thread, nullptr, Worker, nullptr) == 0);
++
++  const struct timespec ts {0, 20000};
++  for (int i = 0; i < Signals && Corrupted.load(std::memory_order_relaxed) == 0; i++) {
++    pthread_kill(Thread, SIGUSR1);
++    nanosleep(&ts, nullptr);
++  }
++  Stop = true;
++  pthread_join(Thread, nullptr);
++
++  CHECK(SignalsSeen.load() > 0);
++  REQUIRE(Corrupted.load() == 0);
++}
+-- 
+2.39.5 (Apple Git-154)
+

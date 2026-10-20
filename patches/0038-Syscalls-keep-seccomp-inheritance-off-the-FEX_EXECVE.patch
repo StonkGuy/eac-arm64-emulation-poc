@@ -1,0 +1,56 @@
+From 2c1ecfff797e27cf16f48242e16d981cc5cf2d70 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:06:24 +0300
+Subject: [PATCH] Syscalls: keep seccomp inheritance off the FEX_EXECVEFD path
+ in execve
+
+With a seccomp filter installed (FEX_NEEDSSECCOMP=1), every execve copies
+the environment to add FEX_SECCOMPFD. That copy also entered the
+FEX_EXECVEFD block whenever the target was not binfmt_misc compatible,
+which is meant only for FD execs and for the path-backed loader FD:
+
+- a path execve of a #! script (or of a foreign ELF) put
+  FEX_EXECVEFD=-100 (AT_FDCWD) into the environment; the next FEX read
+  the ELF from fd -100 and failed with "Invalid or Unsupported elf file",
+  a foreign ELF passed the variable on to its own children
+- an execveat(fd, "", AT_EMPTY_PATH) of a foreign ELF lost AT_EMPTY_PATH
+  before the direct execveat and failed with ENOENT
+
+Take the FEX_EXECVEFD path on the same condition as without seccomp.
+Nothing changes when no filter is installed.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
+index 207c33b..96d0c99 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.cpp
+@@ -340,7 +340,12 @@ uint64_t ExecveHandler(FEXCore::Core::CpuStateFrame* Frame, const char* pathname
+   // - seccomp inheritance
+   // - FEXServer FD inheritance (unshare(CLONE_NEWNET))
+   // - FD_CLOEXEC set on FD on anonymous file FD.
+-  const bool NeedsEnvpCopy = (IsFDExec && !(IsBinfmtCompatible || IsOtherELF)) || HasSeccomp || NeedsFDCopy || NeedsLoaderFD;
++  // The FD to execute is handed to the next FEX through `FEX_EXECVEFD`: an FD execveat that binfmt_misc can't handle,
++  // or a path exec that has to keep its resolved host ELF open.
++  // Seccomp inheritance alone must not take this path: a path exec has no FD to hand over (Args.dirfd is AT_FDCWD), and
++  // an FD exec of a foreign ELF goes straight to the kernel, which still needs AT_EMPTY_PATH.
++  const bool NeedsExecveFD = (IsFDExec && !(IsBinfmtCompatible || IsOtherELF)) || NeedsFDCopy || NeedsLoaderFD;
++  const bool NeedsEnvpCopy = NeedsExecveFD || HasSeccomp;
+ 
+   // We are trying to execute a shebang handled by a different architecture interpreter (e.g. /usr/bin/python from the host FS).
+   // In this case we just defer to the kernel.
+@@ -356,7 +361,7 @@ uint64_t ExecveHandler(FEXCore::Core::CpuStateFrame* Frame, const char* pathname
+       }
+     }
+ 
+-    if (!IsBinfmtCompatible || NeedsFDCopy) {
++    if (NeedsExecveFD) {
+       if (NeedsFDCopy) {
+         // FEX needs the FD to live past execve when binfmt_misc isn't used,
+         // so duplicate the FD if FD_CLOEXEC is set, which removes the FD_CLOEXEC flag.
+-- 
+2.39.5 (Apple Git-154)
+

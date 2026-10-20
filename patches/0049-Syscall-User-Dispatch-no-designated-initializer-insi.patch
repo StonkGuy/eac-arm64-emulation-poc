@@ -1,0 +1,30 @@
+From ef8c90a48b8032289505545b5ba2240ef19866f5 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 21:17:12 +0300
+Subject: [PATCH] Syscall User Dispatch: no designated initializer inside the
+ syscall macro
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp   | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+index a0390e6..a92c1b0 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+@@ -516,7 +516,10 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+                               if (arg5 && arg5 >= SyscallHandler::TASK_MAX_64BIT) {
+                                 return -EFAULT;
+                               }
+-                              SUD = {.Offset = arg3, .Length = arg4, .Selector = arg5, .Enabled = true};
++                              SUD.Offset = arg3;
++                              SUD.Length = arg4;
++                              SUD.Selector = arg5;
++                              SUD.Enabled = true;
+                               return 0;
+                             default: return -EINVAL;
+                             }
+-- 
+2.39.5 (Apple Git-154)
+

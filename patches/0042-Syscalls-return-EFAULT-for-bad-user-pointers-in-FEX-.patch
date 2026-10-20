@@ -1,0 +1,694 @@
+From 3270470b3a3edcb708593d73b34a4265487d507d Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 22:07:04 +0300
+Subject: [PATCH] Syscalls: return EFAULT for bad user pointers in FEX's own
+ handlers
+
+What Linux does: every user pointer a system call reads or writes goes through copy_from_user/copy_to_user,
+get_user/put_user or strncpy_from_user; a fault there becomes -EFAULT and the caller carries on.
+
+What FEX did: passthrough syscalls hand the pointer to the host kernel and behave the same, but the handlers that
+build the x86-64 view themselves dereference guest pointers from host C++ code. A bad pointer killed the process
+with SIGSEGV inside FEX: rt_sigaction, rt_sigprocmask, rt_sigpending, sigaltstack, uname, stat/lstat/fstat/
+newfstatat, arch_prctl(ARCH_GET_FS/GS), every path FEX parses itself (open, openat, access, faccessat, faccessat2,
+readlink, readlinkat, the stat family, execve/execveat with their argv/envp), and seccomp(SET_MODE_FILTER) read the
+program before validating it. The fault-safe accessors upstream added for this (FaultSafeUserMemAccess::CopyFromUser/
+CopyToUser with a PC-range fault fixup) existed, but the SIGSEGV path deliberately died after the fixup
+("intentionally stub-implemented", unittests Known_Failures).
+
+Fix:
+- HandleFrontendSIGSEGV returns to the accessor with EFAULT instead of dying after the fixup.
+- New FaultSafeUserMemAccess::IsStringReadable (same fixup scheme) for guest path/argv strings.
+- The handlers above copy their user structures in and out through CopyFromUser/CopyToUser around the unchanged
+  internals, in Linux's order: input copied before anything changes, output copied afterwards (-EFAULT then, with
+  the change already made, as on Linux). readlink of /proc/self/exe also stops NUL-padding the buffer (Linux copies
+  exactly the link length). Release-build VerifyIsWritable() in fstat/stat no longer aborts on a NULL buffer.
+Cost: the copies are a few dozen bytes on syscalls that are already emulated in C++; a path string is walked once
+more before FEX parses it. Nothing changes for passthrough syscalls or for JIT code.
+
+Tests: eac-tests/syscall-efault (51 cases, each in a forked child) and the upstream unittests syscalls_efault.cpp,
+extended with the cases above; syscalls_efault.64 leaves Known_Failures (not run here: no x86-64 sysroot in the
+build guest). Native x86-64 (kernel 6.19): PASS. Before: 26 cases killed by SIGSEGV, seccomp case -EINVAL. After:
+PASS; eac-tests/run-all.sh 23/23 as expected.
+
+Limits: the 32-bit (x32/) handlers are not converted (syscalls_efault.32 stays a known failure); ioctl and other
+emulated structures not listed above are unchanged. A pointer that another thread unmaps between the string check
+and the host syscall can still fault inside FEX.
+
+Upstream: issue #3942 (open; FaultSafeUserMemAccess and the Known_Failures entry are unchanged on FEX main as
+triaged at 14c9268).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxSyscalls/FaultSafeUserMemAccess.cpp  | 25 +++++++
+ .../LinuxSyscalls/FileManagement.cpp          | 23 +++++--
+ .../LinuxSyscalls/Seccomp/SeccompEmulator.cpp | 17 ++++-
+ .../LinuxSyscalls/SignalDelegator.cpp         |  3 +-
+ .../LinuxEmulation/LinuxSyscalls/Syscalls.h   |  7 +-
+ .../LinuxSyscalls/Syscalls/FD.cpp             | 18 +++++
+ .../LinuxSyscalls/Syscalls/FS.cpp             |  3 +
+ .../LinuxSyscalls/Syscalls/Info.cpp           |  8 ++-
+ .../LinuxSyscalls/Syscalls/Signals.cpp        | 22 ++++--
+ .../LinuxSyscalls/Syscalls/Thread.cpp         |  6 +-
+ .../LinuxEmulation/LinuxSyscalls/x64/FD.cpp   | 41 ++++++++----
+ .../LinuxSyscalls/x64/Signals.cpp             | 15 ++++-
+ .../LinuxSyscalls/x64/Thread.cpp              | 67 ++++++++++---------
+ unittests/FEXLinuxTests/Known_Failures        |  3 +-
+ .../tests/syscalls/syscalls_efault.cpp        | 57 ++++++++++++++++
+ 15 files changed, 247 insertions(+), 68 deletions(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp
+index 6471e64..9af89be 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp
+@@ -41,6 +41,26 @@ __attribute__((naked)) size_t CopyToUser(void* Dest, const void* Src, size_t Siz
+                    : "memory");
+ }
+ 
++__attribute__((naked)) static size_t StringReadableImpl(const char* Src) {
++  __asm volatile(R"(
++  1:
++  .globl StringReadable_FaultInst
++  StringReadable_FaultInst:
++    ldrb w1, [x0], 1; // <- This line can fault.
++    cbnz w1, 1b;
++    mov x0, 0;
++    ret;
++  )" ::
++                   : "memory");
++}
++
++bool IsStringReadable(const char* Src) {
++  return Src == nullptr || StringReadableImpl(Src) == 0;
++}
++
++extern "C" uint64_t StringReadable_FaultInst;
++void* const StringReadable_FaultLocation = &StringReadable_FaultInst;
++
+ extern "C" uint64_t CopyFromUser_FaultInst;
+ void* const CopyFromUser_FaultLocation = &CopyFromUser_FaultInst;
+ 
+@@ -157,6 +177,7 @@ bool IsFaultLocation(uint64_t PC) {
+   bool IsMemcpyFault = false;
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == CopyToUser_FaultLocation;
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == CopyFromUser_FaultLocation;
++  IsMemcpyFault |= reinterpret_cast<void*>(PC) == StringReadable_FaultLocation;
+ #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED && defined(ARCHITECTURE_arm64)
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == UserReadable_FaultLocation;
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == UserWritable_FaultLocation;
+@@ -176,6 +197,10 @@ size_t CopyToUser(void* Dest, const void* Src, size_t Size) {
+   return Size;
+ }
+ 
++bool IsStringReadable(const char* Src) {
++  return true;
++}
++
+ bool IsFaultLocation(uint64_t PC) {
+   return false;
+ }
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/FileManagement.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/FileManagement.cpp
+index 327a09d..9a9e6a5 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/FileManagement.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/FileManagement.cpp
+@@ -817,7 +817,10 @@ static std::optional<uint64_t> ReadlinkTraceeExe(const char* Path, char* Buf, si
+     return std::nullopt;
+   }
+   const size_t Len = std::min(BufSize, Exe->size());
+-  memcpy(Buf, Exe->data(), Len);
++  if (FaultSafeUserMemAccess::CopyToUser(Buf, Exe->data(), Len)) {
++    errno = EFAULT;
++    return -1;
++  }
+   return Len;
+ }
+ 
+@@ -828,9 +831,14 @@ uint64_t FileManager::Readlink(const char* pathname, char* buf, size_t bufsiz) {
+   snprintf(PidSelfPath, 50, "/proc/%i/exe", CurrentPID);
+ 
+   if (strcmp(pathname, "/proc/self/exe") == 0 || strcmp(pathname, "/proc/thread-self/exe") == 0 || strcmp(pathname, PidSelfPath) == 0) {
++    // Like Linux: copy the link text without a terminator, -EFAULT if the buffer is bad.
+     const auto& App = Filename();
+-    strncpy(buf, App.c_str(), bufsiz);
+-    return std::min(bufsiz, App.size());
++    const size_t Len = std::min(bufsiz, App.size());
++    if (FaultSafeUserMemAccess::CopyToUser(buf, App.c_str(), Len)) {
++      errno = EFAULT;
++      return -1;
++    }
++    return Len;
+   }
+ 
+   if (auto Traced = ReadlinkTraceeExe(pathname, buf, bufsiz)) {
+@@ -909,9 +917,14 @@ uint64_t FileManager::Readlinkat(int dirfd, const char* pathname, char* buf, siz
+   snprintf(PidSelfPath, 50, "/proc/%i/exe", CurrentPID);
+ 
+   if (Path == "/proc/self/exe" || Path == "/proc/thread-self/exe" || Path == PidSelfPath) {
++    // Like Linux: copy the link text without a terminator, -EFAULT if the buffer is bad.
+     const auto& App = Filename();
+-    strncpy(buf, App.c_str(), bufsiz);
+-    return std::min(bufsiz, App.size());
++    const size_t Len = std::min(bufsiz, App.size());
++    if (FaultSafeUserMemAccess::CopyToUser(buf, App.c_str(), Len)) {
++      errno = EFAULT;
++      return -1;
++    }
++    return Len;
+   }
+ 
+   if (!Path.empty() && Path[0] == '/') {
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
+index 0322a78..9d40fe2 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
+@@ -641,7 +641,10 @@ uint64_t SeccompEmulator::SetModeFilter(FEXCore::Core::CpuStateFrame* Frame, uin
+     return -EINVAL;
+   }
+ 
+-  if (!prog) {
++  // Like Linux (seccomp_prepare_user_filter), the program header and then its instructions are copied in first; a bad
++  // pointer in either is -EFAULT, not a fault inside the emulator.
++  sock_fprog UserProg;
++  if (FaultSafeUserMemAccess::CopyFromUser(&UserProg, prog, sizeof(UserProg))) {
+     return -EFAULT;
+   }
+ 
+@@ -650,12 +653,22 @@ uint64_t SeccompEmulator::SetModeFilter(FEXCore::Core::CpuStateFrame* Frame, uin
+     return -EACCES;
+   }
+ 
+-  if (prog->len > BPF_MAXINSNS || prog->len == 0) {
++  if (UserProg.len > BPF_MAXINSNS || UserProg.len == 0) {
+     // operation specified SECCOMP_SET_MODE_FILTER, but the filter program pointed to by args was not valid or the length of the filter
+     // program was zero or exceeded BPF_MAXINSNS (4096) instructions.
+     return -EINVAL;
+   }
+ 
++  fextl::vector<sock_filter> Instructions(UserProg.len);
++  if (FaultSafeUserMemAccess::CopyFromUser(Instructions.data(), UserProg.filter, UserProg.len * sizeof(sock_filter))) {
++    return -EFAULT;
++  }
++  const sock_fprog LocalProg {
++    .len = UserProg.len,
++    .filter = Instructions.data(),
++  };
++  prog = &LocalProg;
++
+   // Don't interrupt me while I'm jitting.
+   auto lk = FEXCore::MaskSignalsAndLockMutex(FilterMutex);
+ 
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+index 98d0752..df50629 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+@@ -635,7 +635,8 @@ bool SignalDelegator::HandleFrontendSIGSEGV(FEXCore::Core::InternalThreadState*
+   auto SigInfo = *static_cast<siginfo_t*>(Info);
+ 
+   if (FaultSafeUserMemAccess::TryHandleSafeFault(Signal, SigInfo, UContext)) {
+-    ERROR_AND_DIE_FMT("Received invalid data to syscall. Crashing now!");
++    // A syscall handler touched a bad application pointer through a fault-safe accessor: it returns EFAULT.
++    return true;
+   }
+ 
+ #ifdef ARCHITECTURE_arm64
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
+index 0813fca..cbfd79a 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
+@@ -609,11 +609,16 @@ uint64_t GetDentsEmulation(int fd, T* dirp, uint32_t count);
+ namespace FaultSafeUserMemAccess {
+   // These are little helper functions for cases when FEX needs to copy data to or from the application in a robust fashion.
+   // CopyFromUser and CopyToUser are memcpy routines that expect to safely SIGSEGV when reading or writing application memory respectively.
+-  // Returns zero if the memcpy completed, or crashes with SIGABRT and a log message if it faults.
++  // Returns zero if the memcpy completed, or EFAULT if the application memory faulted (Linux's copy_{from,to}_user).
+   [[nodiscard]]
+   size_t CopyFromUser(void* Dest, const void* Src, size_t Size);
+   [[nodiscard]]
+   size_t CopyToUser(void* Dest, const void* Src, size_t Size);
++
++  // Returns false if reading the null-terminated string faults, so the syscall can return -EFAULT before FEX parses
++  // it (Linux's strncpy_from_user). A null pointer counts as readable: the host syscall reports it.
++  [[nodiscard]]
++  bool IsStringReadable(const char* Src);
+ #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED && defined(ARCHITECTURE_arm64)
+   // These helpers just check if the user pointer is readable and writable.
+   // This is useful in an assert build that can be safely sprinkled through the syscall handler without overhead in release builds.
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/FD.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/FD.cpp
+index 9acf01f..1601de1 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/FD.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/FD.cpp
+@@ -38,6 +38,9 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
+   });
+ 
+   REGISTER_SYSCALL_IMPL(open, [](FEXCore::Core::CpuStateFrame* Frame, const char* pathname, int flags, uint32_t mode) -> uint64_t {
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++      return -EFAULT;
++    }
+     flags = FEX::HLE::RemapFromX86Flags(flags);
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.Open(pathname, flags, mode);
+     SYSCALL_ERRNO();
+@@ -59,6 +62,9 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
+   });
+ 
+   REGISTER_SYSCALL_IMPL(access, [](FEXCore::Core::CpuStateFrame* Frame, const char* pathname, int mode) -> uint64_t {
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++      return -EFAULT;
++    }
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.Access(pathname, mode);
+     SYSCALL_ERRNO();
+   });
+@@ -80,22 +86,34 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
+   });
+ 
+   REGISTER_SYSCALL_IMPL(openat, [](FEXCore::Core::CpuStateFrame* Frame, int dirfs, const char* pathname, int flags, uint32_t mode) -> uint64_t {
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++      return -EFAULT;
++    }
+     flags = FEX::HLE::RemapFromX86Flags(flags);
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.Openat(dirfs, pathname, flags, mode);
+     SYSCALL_ERRNO();
+   });
+ 
+   REGISTER_SYSCALL_IMPL(readlinkat, [](FEXCore::Core::CpuStateFrame* Frame, int dirfd, const char* pathname, char* buf, size_t bufsiz) -> uint64_t {
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++      return -EFAULT;
++    }
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.Readlinkat(dirfd, pathname, buf, bufsiz);
+     SYSCALL_ERRNO();
+   });
+ 
+   REGISTER_SYSCALL_IMPL(faccessat, [](FEXCore::Core::CpuStateFrame* Frame, int dirfd, const char* pathname, int mode) -> uint64_t {
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++      return -EFAULT;
++    }
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.FAccessat(dirfd, pathname, mode);
+     SYSCALL_ERRNO();
+   });
+ 
+   REGISTER_SYSCALL_IMPL(faccessat2, [](FEXCore::Core::CpuStateFrame* Frame, int dirfd, const char* pathname, int mode, int flags) -> uint64_t {
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++      return -EFAULT;
++    }
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.FAccessat2(dirfd, pathname, mode, flags);
+     SYSCALL_ERRNO();
+   });
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/FS.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/FS.cpp
+index 64c9aae..9eee296 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/FS.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/FS.cpp
+@@ -52,6 +52,9 @@ void RegisterFS(FEX::HLE::SyscallHandler* Handler) {
+   });
+ 
+   REGISTER_SYSCALL_IMPL(readlink, [](FEXCore::Core::CpuStateFrame* Frame, const char* pathname, char* buf, size_t bufsiz) -> uint64_t {
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++      return -EFAULT;
++    }
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.Readlink(pathname, buf, bufsiz);
+     SYSCALL_ERRNO();
+   });
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Info.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Info.cpp
+index 96ed673..a9db37a 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Info.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Info.cpp
+@@ -35,9 +35,12 @@ using cap_user_header_t = void*;
+ using cap_user_data_t = void*;
+ 
+ void RegisterInfo(FEX::HLE::SyscallHandler* Handler) {
+-  REGISTER_SYSCALL_IMPL(uname, [](FEXCore::Core::CpuStateFrame* Frame, struct utsname* buf) -> uint64_t {
++  REGISTER_SYSCALL_IMPL(uname, [](FEXCore::Core::CpuStateFrame* Frame, struct utsname* ubuf) -> uint64_t {
+     auto Thread = FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame);
+ 
++    // Built here and copied out at once, so a bad buffer gives -EFAULT like Linux.
++    struct utsname Out {};
++    auto buf = &Out;
+     struct utsname Local {};
+     if (::uname(&Local) == 0) {
+       memcpy(buf->nodename, Local.nodename, sizeof(Local.nodename));
+@@ -67,6 +70,9 @@ void RegisterInfo(FEX::HLE::SyscallHandler* Handler) {
+       // Tell the guest that we are a 64bit kernel
+       strcpy(buf->machine, "x86_64");
+     }
++    if (FaultSafeUserMemAccess::CopyToUser(ubuf, &Out, sizeof(Out))) {
++      return -EFAULT;
++    }
+     return 0;
+   });
+ 
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Signals.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Signals.cpp
+index 8723026..1956b0d 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Signals.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Signals.cpp
+@@ -25,13 +25,27 @@ struct GuestSigAction;
+ namespace FEX::HLE {
+ void RegisterSignals(FEX::HLE::SyscallHandler* Handler) {
+   REGISTER_SYSCALL_IMPL(rt_sigprocmask, [](FEXCore::Core::CpuStateFrame* Frame, int how, const uint64_t* set, uint64_t* oldset) -> uint64_t {
+-    return FEX::HLE::_SyscallHandler->GetSignalDelegator()->GuestSigProcMask(FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame),
+-                                                                             how, set, oldset);
++    uint64_t NewSet;
++    uint64_t OldSet;
++    if (set && FaultSafeUserMemAccess::CopyFromUser(&NewSet, set, sizeof(NewSet))) {
++      return -EFAULT;
++    }
++    uint64_t Result = FEX::HLE::_SyscallHandler->GetSignalDelegator()->GuestSigProcMask(
++      FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame), how, set ? &NewSet : nullptr, oldset ? &OldSet : nullptr);
++    if (Result == 0 && oldset && FaultSafeUserMemAccess::CopyToUser(oldset, &OldSet, sizeof(OldSet))) {
++      return -EFAULT;
++    }
++    return Result;
+   });
+ 
+   REGISTER_SYSCALL_IMPL(rt_sigpending, [](FEXCore::Core::CpuStateFrame* Frame, uint64_t* set, size_t sigsetsize) -> uint64_t {
+-    return FEX::HLE::_SyscallHandler->GetSignalDelegator()->GuestSigPending(FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame), set,
+-                                                                            sigsetsize);
++    uint64_t Pending {};
++    uint64_t Result = FEX::HLE::_SyscallHandler->GetSignalDelegator()->GuestSigPending(
++      FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame), &Pending, sigsetsize);
++    if (Result == 0 && FaultSafeUserMemAccess::CopyToUser(set, &Pending, std::min(sigsetsize, sizeof(Pending)))) {
++      return -EFAULT;
++    }
++    return Result;
+   });
+ 
+   REGISTER_SYSCALL_IMPL(rt_sigsuspend, [](FEXCore::Core::CpuStateFrame* Frame, uint64_t* unewset, size_t sigsetsize) -> uint64_t {
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+index c6a48e7..3d00493 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+@@ -535,12 +535,10 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+       Result = 0;
+       break;
+     case 0x1003: // ARCH_GET_FS
+-      *reinterpret_cast<uint64_t*>(addr) = Frame->State.fs_cached;
+-      Result = 0;
++      Result = FaultSafeUserMemAccess::CopyToUser(reinterpret_cast<uint64_t*>(addr), &Frame->State.fs_cached, sizeof(uint64_t)) ? -EFAULT : 0;
+       break;
+     case 0x1004: // ARCH_GET_GS
+-      *reinterpret_cast<uint64_t*>(addr) = Frame->State.gs_cached;
+-      Result = 0;
++      Result = FaultSafeUserMemAccess::CopyToUser(reinterpret_cast<uint64_t*>(addr), &Frame->State.gs_cached, sizeof(uint64_t)) ? -EFAULT : 0;
+       break;
+     case 0x3001:        // ARCH_CET_STATUS
+       Result = -EINVAL; // We don't support CET, return EINVAL
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/FD.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/FD.cpp
+index 703c875..4eab76a 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/FD.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/FD.cpp
+@@ -63,45 +63,59 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
+     });
+ 
+   REGISTER_SYSCALL_IMPL_X64(stat, [](FEXCore::Core::CpuStateFrame* Frame, const char* pathname, FEX::HLE::x64::guest_stat* buf) -> uint64_t {
+-    FaultSafeUserMemAccess::VerifyIsStringReadableMaxSize(pathname, PATH_MAX);
+-    FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++      return -EFAULT;
++    }
+     struct stat host_stat;
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.Stat(pathname, &host_stat);
+     if (Result != -1) {
+-      *buf = host_stat;
++      FEX::HLE::x64::guest_stat guest = host_stat;
++      if (FaultSafeUserMemAccess::CopyToUser(buf, &guest, sizeof(guest))) {
++        return -EFAULT;
++      }
+     }
+     SYSCALL_ERRNO();
+   });
+ 
+   REGISTER_SYSCALL_IMPL_X64(fstat, [](FEXCore::Core::CpuStateFrame* Frame, int fd, FEX::HLE::x64::guest_stat* buf) -> uint64_t {
+-    FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
+     struct stat host_stat;
+     uint64_t Result = ::fstat(fd, &host_stat);
+     if (Result != -1) {
+-      *buf = host_stat;
++      FEX::HLE::x64::guest_stat guest = host_stat;
++      if (FaultSafeUserMemAccess::CopyToUser(buf, &guest, sizeof(guest))) {
++        return -EFAULT;
++      }
+     }
+     SYSCALL_ERRNO();
+   });
+ 
+   REGISTER_SYSCALL_IMPL_X64(lstat, [](FEXCore::Core::CpuStateFrame* Frame, const char* path, FEX::HLE::x64::guest_stat* buf) -> uint64_t {
+-    FaultSafeUserMemAccess::VerifyIsStringReadableMaxSize(path, PATH_MAX);
+-    FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
++    if (!FaultSafeUserMemAccess::IsStringReadable(path)) {
++      return -EFAULT;
++    }
+     struct stat host_stat;
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.Lstat(path, &host_stat);
+     if (Result != -1) {
+-      *buf = host_stat;
++      FEX::HLE::x64::guest_stat guest = host_stat;
++      if (FaultSafeUserMemAccess::CopyToUser(buf, &guest, sizeof(guest))) {
++        return -EFAULT;
++      }
+     }
+     SYSCALL_ERRNO();
+   });
+ 
+   REGISTER_SYSCALL_IMPL_X64(
+     newfstatat, [](FEXCore::Core::CpuStateFrame* Frame, int dirfd, const char* pathname, FEX::HLE::x64::guest_stat* buf, int flag) -> uint64_t {
+-      FaultSafeUserMemAccess::VerifyIsStringReadableMaxSize(pathname, PATH_MAX);
+-      FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
++      if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
++        return -EFAULT;
++      }
+       struct stat host_stat;
+       uint64_t Result = FEX::HLE::_SyscallHandler->FM.NewFSStatAt(dirfd, pathname, &host_stat, flag);
+       if (Result != -1) {
+-        *buf = host_stat;
++        FEX::HLE::x64::guest_stat guest = host_stat;
++        if (FaultSafeUserMemAccess::CopyToUser(buf, &guest, sizeof(guest))) {
++          return -EFAULT;
++        }
+       }
+       SYSCALL_ERRNO();
+     });
+@@ -133,8 +147,9 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
+   });
+ 
+   REGISTER_SYSCALL_IMPL_X64(statfs, [](FEXCore::Core::CpuStateFrame* Frame, const char* path, struct statfs* buf) -> uint64_t {
+-    FaultSafeUserMemAccess::VerifyIsStringReadableMaxSize(path, PATH_MAX);
+-    FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
++    if (!FaultSafeUserMemAccess::IsStringReadable(path)) {
++      return -EFAULT;
++    }
+     uint64_t Result = FEX::HLE::_SyscallHandler->FM.Statfs(path, buf);
+     SYSCALL_ERRNO();
+   });
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/Signals.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/Signals.cpp
+index 36726ec..c57b58e 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/Signals.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/Signals.cpp
+@@ -25,10 +25,19 @@ void RegisterSignals(FEX::HLE::SyscallHandler* Handler) {
+       if (sigsetsize != 8) {
+         return -EINVAL;
+       }
+-      FaultSafeUserMemAccess::VerifyIsReadableOrNull(act, sizeof(GuestSigAction));
+-      FaultSafeUserMemAccess::VerifyIsWritableOrNull(oldact, sizeof(GuestSigAction));
++      // Like Linux: the new action is copied in before anything changes, the old one copied out afterwards.
++      GuestSigAction NewAct;
++      GuestSigAction OldAct;
++      if (act && FaultSafeUserMemAccess::CopyFromUser(&NewAct, act, sizeof(NewAct))) {
++        return -EFAULT;
++      }
+ 
+-      return FEX::HLE::_SyscallHandler->GetSignalDelegator()->RegisterGuestSignalHandler(signum, act, oldact);
++      uint64_t Result = FEX::HLE::_SyscallHandler->GetSignalDelegator()->RegisterGuestSignalHandler(signum, act ? &NewAct : nullptr,
++                                                                                                      oldact ? &OldAct : nullptr);
++      if (Result == 0 && oldact && FaultSafeUserMemAccess::CopyToUser(oldact, &OldAct, sizeof(OldAct))) {
++        return -EFAULT;
++      }
++      return Result;
+     });
+ 
+   REGISTER_SYSCALL_IMPL_X64(
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/Thread.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/Thread.cpp
+index c25ff5b..1c62131 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/Thread.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/Thread.cpp
+@@ -233,6 +233,24 @@ enum Modify_ldt_func : int32_t {
+   LDT_WRITE = 0x11,
+ };
+ 
++// Gathers a null-terminated argv/envp array from the application. False if the array or one of its strings is not
++// readable: execve then returns -EFAULT like Linux (copy_strings) instead of FEX faulting while it parses them.
++static bool GatherStringArray(char* const* User, fextl::vector<const char*>& Out) {
++  for (size_t i = 0;; ++i) {
++    const char* Str;
++    if (FaultSafeUserMemAccess::CopyFromUser(&Str, &User[i], sizeof(Str))) {
++      return false;
++    }
++    Out.push_back(Str);
++    if (!Str) {
++      return true;
++    }
++    if (!FaultSafeUserMemAccess::IsStringReadable(Str)) {
++      return false;
++    }
++  }
++}
++
+ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+   REGISTER_SYSCALL_IMPL_X64(modify_ldt, [](FEXCore::Core::CpuStateFrame* Frame, int func, void* ptr, unsigned long bytecount) -> uint64_t {
+     switch (func) {
+@@ -278,10 +296,17 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+     }));
+ 
+   REGISTER_SYSCALL_IMPL_X64(sigaltstack, [](FEXCore::Core::CpuStateFrame* Frame, const stack_t* ss, stack_t* old_ss) -> uint64_t {
+-    FaultSafeUserMemAccess::VerifyIsReadableOrNull(ss, sizeof(*ss));
+-    FaultSafeUserMemAccess::VerifyIsWritableOrNull(old_ss, sizeof(*old_ss));
+-    return FEX::HLE::_SyscallHandler->GetSignalDelegator()->RegisterGuestSigAltStack(
+-      FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame), ss, old_ss);
++    stack_t NewStack;
++    stack_t OldStack;
++    if (ss && FaultSafeUserMemAccess::CopyFromUser(&NewStack, ss, sizeof(NewStack))) {
++      return -EFAULT;
++    }
++    uint64_t Result = FEX::HLE::_SyscallHandler->GetSignalDelegator()->RegisterGuestSigAltStack(
++      FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame), ss ? &NewStack : nullptr, old_ss ? &OldStack : nullptr);
++    if (Result == 0 && old_ss && FaultSafeUserMemAccess::CopyToUser(old_ss, &OldStack, sizeof(OldStack))) {
++      return -EFAULT;
++    }
++    return Result;
+   });
+ 
+   // launch a new process under fex
+@@ -290,20 +315,9 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+     fextl::vector<const char*> Args;
+     fextl::vector<const char*> Envp;
+ 
+-    if (argv) {
+-      for (int i = 0; argv[i]; i++) {
+-        Args.push_back(argv[i]);
+-      }
+-
+-      Args.push_back(nullptr);
+-    }
+-
+-    if (envp) {
+-      for (int i = 0; envp[i]; i++) {
+-        Envp.push_back(envp[i]);
+-      }
+-
+-      Envp.push_back(nullptr);
++    if (!FaultSafeUserMemAccess::IsStringReadable(pathname) || (argv && !GatherStringArray(argv, Args)) ||
++        (envp && !GatherStringArray(envp, Envp))) {
++      return -EFAULT;
+     }
+ 
+     auto* const* ArgsPtr = argv ? const_cast<char* const*>(Args.data()) : nullptr;
+@@ -319,20 +333,9 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+                               fextl::vector<const char*> Args;
+                               fextl::vector<const char*> Envp;
+ 
+-                              if (argv) {
+-                                for (int i = 0; argv[i]; i++) {
+-                                  Args.push_back(argv[i]);
+-                                }
+-
+-                                Args.push_back(nullptr);
+-                              }
+-
+-                              if (envp) {
+-                                for (int i = 0; envp[i]; i++) {
+-                                  Envp.push_back(envp[i]);
+-                                }
+-
+-                                Envp.push_back(nullptr);
++                              if (!FaultSafeUserMemAccess::IsStringReadable(pathname) || (argv && !GatherStringArray(argv, Args)) ||
++                                  (envp && !GatherStringArray(envp, Envp))) {
++                                return -EFAULT;
+                               }
+ 
+                               FEX::HLE::ExecveAtArgs AtArgs {
+diff --git a/unittests/FEXLinuxTests/Known_Failures b/unittests/FEXLinuxTests/Known_Failures
+index 689a15a..90f3cbf 100644
+--- a/unittests/FEXLinuxTests/Known_Failures
++++ b/unittests/FEXLinuxTests/Known_Failures
+@@ -20,9 +20,8 @@ sigtest_samask.64
+ sigtest_sigmask.32
+ sigtest_sigmask.64
+ 
+-# Disabled since FEX's FaultSafeMemcpy is intentionally stub-implemented
++# The 32-bit syscall handlers do not use the fault-safe accessors yet
+ syscalls_efault.32
+-syscalls_efault.64
+ 
+ # partial instruction decode is known to fail
+ noexec_protect.64
+diff --git a/unittests/FEXLinuxTests/tests/syscalls/syscalls_efault.cpp b/unittests/FEXLinuxTests/tests/syscalls/syscalls_efault.cpp
+index 9e59849..6a7cb80 100644
+--- a/unittests/FEXLinuxTests/tests/syscalls/syscalls_efault.cpp
++++ b/unittests/FEXLinuxTests/tests/syscalls/syscalls_efault.cpp
+@@ -6,6 +6,7 @@
+ #include <sys/syscall.h>
+ #include <poll.h>
+ #include <signal.h>
++#include <fcntl.h>
+ 
+ TEST_CASE("poll") {
+   // poll can return EFAULT if first argument is pointed to invalid pointer.
+@@ -171,3 +172,59 @@ TEST_CASE("ppoll_64") {
+     CHECK(readonly_ts.tv_sec == 1);
+   }
+ }
++
++// Syscalls whose x86-64 view FEX builds itself: a bad pointer must give EFAULT like Linux, not a fault inside FEX.
++static void* InvalidPage() {
++  return mmap(nullptr, sysconf(_SC_PAGESIZE), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++}
++
++TEST_CASE("rt_sigaction") {
++  auto invalid = InvalidPage();
++  CHECK(::syscall(SYS_rt_sigaction, SIGUSR1, invalid, nullptr, 8) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(::syscall(SYS_rt_sigaction, SIGUSR1, nullptr, invalid, 8) == -1);
++  CHECK(errno == EFAULT);
++}
++
++TEST_CASE("rt_sigprocmask") {
++  auto invalid = InvalidPage();
++  CHECK(::syscall(SYS_rt_sigprocmask, SIG_BLOCK, invalid, nullptr, 8) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(::syscall(SYS_rt_sigprocmask, SIG_BLOCK, nullptr, invalid, 8) == -1);
++  CHECK(errno == EFAULT);
++}
++
++TEST_CASE("sigaltstack") {
++  auto invalid = InvalidPage();
++  CHECK(::syscall(SYS_sigaltstack, invalid, nullptr) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(::syscall(SYS_sigaltstack, nullptr, invalid) == -1);
++  CHECK(errno == EFAULT);
++}
++
++TEST_CASE("uname") {
++  CHECK(::syscall(SYS_uname, InvalidPage()) == -1);
++  CHECK(errno == EFAULT);
++}
++
++TEST_CASE("paths") {
++  auto invalid = InvalidPage();
++  char buf[256];
++  CHECK(::syscall(SYS_openat, AT_FDCWD, invalid, 0, 0) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(::syscall(SYS_faccessat, AT_FDCWD, invalid, 0) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(::syscall(SYS_readlinkat, AT_FDCWD, invalid, buf, sizeof(buf)) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(::syscall(SYS_readlinkat, AT_FDCWD, "/proc/self/exe", invalid, sizeof(buf)) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(::syscall(SYS_execve, invalid, nullptr, nullptr) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(::syscall(SYS_execve, "/proc/self/exe", invalid, nullptr) == -1);
++  CHECK(errno == EFAULT);
++}
++
++TEST_CASE("fstat") {
++  CHECK(::syscall(SYS_fstat, STDOUT_FILENO, InvalidPage()) == -1);
++  CHECK(errno == EFAULT);
++}
+-- 
+2.39.5 (Apple Git-154)
+

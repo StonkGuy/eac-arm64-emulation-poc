@@ -1,0 +1,93 @@
+From 807bcc3788ab43fd88a68a942872bf754073414b Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 02:49:00 +0300
+Subject: [PATCH] SignalTrace: unlink the /dev/shm ring on exit_group
+
+FEX_SIGNALTRACE=1 created /dev/shm/fex-<pid>-sigtrace (16 MiB) and never
+removed it, unlike the fex-<pid>-stats object. Unlink it on a regular
+exit; deaths by signal keep it for post-mortem decoding.
+
+eac-tests/sigtrace-unlink checks the lifecycle (native x86-64: PASS x3).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxSyscalls/SignalTrace.cpp               | 17 ++++++++++++++++-
+ .../LinuxEmulation/LinuxSyscalls/SignalTrace.h  |  4 ++++
+ .../LinuxSyscalls/Syscalls/Thread.cpp           |  2 ++
+ 3 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.cpp
+index 703281c..0b01091 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.cpp
+@@ -10,11 +10,17 @@ namespace FEX::HLE::SigTrace {
+ Rec* Buf = nullptr;
+ std::atomic<uint32_t> Idx {0};
+ 
++namespace {
++  std::string PathFor(pid_t Pid) {
++    return "/dev/shm/fex-" + std::to_string(Pid) + "-sigtrace";
++  }
++} // namespace
++
+ void Init() {
+   if (Buf) {
+     return;
+   }
+-  const std::string Path = "/dev/shm/fex-" + std::to_string(getpid()) + "-sigtrace";
++  const std::string Path = PathFor(getpid());
+   const int fd = open(Path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+   if (fd < 0) {
+     return;
+@@ -29,4 +35,13 @@ void Init() {
+     Buf = static_cast<Rec*>(Map);
+   }
+ }
++
++void CleanupForExit() {
++  if (!Buf) {
++    return;
++  }
++  // The mapping goes away with the process; the named object would otherwise stay in /dev/shm (16 MiB each).
++  // A forked child inherits Buf but never created its own name, so this unlink is a harmless ENOENT there.
++  unlink(PathFor(getpid()).c_str());
++}
+ } // namespace FEX::HLE::SigTrace
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h
+index 9571433..07b44ce 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h
+@@ -45,6 +45,10 @@ extern std::atomic<uint32_t> Idx;
+ /// Creates the ring if FEX_SIGNALTRACE is enabled. Call once at start-up.
+ void Init();
+ 
++/// Removes the ring's /dev/shm name on a regular exit (exit_group). Idempotent. Deaths by signal keep the ring for
++/// post-mortem decoding.
++void CleanupForExit();
++
+ inline bool Enabled() {
+   return Buf != nullptr;
+ }
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+index c6a48e7..a47ea62 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+@@ -8,6 +8,7 @@ $end_info$
+ #include "CodeLoader.h"
+ 
+ #include "LinuxSyscalls/SignalDelegator.h"
++#include "LinuxSyscalls/SignalTrace.h"
+ #include "LinuxSyscalls/Syscalls.h"
+ #include "LinuxSyscalls/Syscalls/Thread.h"
+ #include "LinuxSyscalls/x64/Syscalls.h"
+@@ -577,6 +578,7 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+     // Save telemetry if we're exiting.
+     FEX::HLE::_SyscallHandler->GetSignalDelegator()->SaveTelemetry();
+     FEX::HLE::_SyscallHandler->TM.CleanupForExit();
++    FEX::HLE::SigTrace::CleanupForExit();
+ 
+     syscall(SYSCALL_DEF(exit_group), status);
+     // This will never be reached
+-- 
+2.39.5 (Apple Git-154)
+

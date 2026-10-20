@@ -1,0 +1,185 @@
+From adff8d3da54f1aad4bfd04159520f5fc54a734d3 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 03:02:51 +0300
+Subject: [PATCH] LinuxSyscalls: x86-64 munmap may cross 4 GiB (#5847)
+
+A 64-bit guest munmap starting below 4 GiB went through the 32-bit
+allocator, which returned EOVERFLOW when the range crossed 4 GiB; Linux
+unmaps the whole range and ignores holes (Chromium-based clients abort on
+the failure). x86-64 now always uses the host munmap and tells the 32-bit
+allocator which of its pages (MAP_32BIT) are free again, clipped to its
+page range.
+
+Test: eac-tests/munmap-4g (11 cases incl. the 4 GiB boundary and overflow;
+native x86-64: PASS x3) and FEXLinuxTests syscalls/munmap_cross_4gb.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxSyscalls/LinuxAllocator.cpp          | 13 ++++
+ .../LinuxSyscalls/LinuxAllocator.h            |  2 +
+ .../LinuxSyscalls/SyscallsSMCTracking.cpp     | 15 +++-
+ .../tests/syscalls/munmap_cross_4gb.64.cpp    | 73 +++++++++++++++++++
+ 4 files changed, 102 insertions(+), 1 deletion(-)
+ create mode 100644 unittests/FEXLinuxTests/tests/syscalls/munmap_cross_4gb.64.cpp
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/LinuxAllocator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/LinuxAllocator.cpp
+index 60b0ef1..28d5831 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/LinuxAllocator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/LinuxAllocator.cpp
+@@ -48,6 +48,7 @@ public:
+ 
+   void* Mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset) override;
+   int Munmap(void* addr, size_t length) override;
++  void TrackUnmapped(void* addr, size_t length) override;
+   void* Mremap(void* old_address, size_t old_size, size_t new_size, int flags, void* new_address) override;
+   uint64_t Shmat(int shmid, const void* shmaddr, int shmflg, uint32_t* ResultAddress) override;
+   uint64_t Shmdt(const void* shmaddr) override;
+@@ -288,6 +289,18 @@ int MemAllocator32Bit::Munmap(void* addr, size_t length) {
+   return 0;
+ }
+ 
++void MemAllocator32Bit::TrackUnmapped(void* addr, size_t length) {
++  std::scoped_lock<std::mutex> lk {AllocMutex};
++
++  // The pages the constructor reserves (below BASE_KEY and TOP_KEY itself) stay reserved.
++  const uint64_t Addr = reinterpret_cast<uintptr_t>(addr);
++  const uint64_t PageAddr = std::max(Addr >> FEXCore::Utils::FEX_PAGE_SHIFT, BASE_KEY);
++  const uint64_t PageEnd = std::min(FEXCore::AlignUp(Addr + length, FEXCore::Utils::FEX_PAGE_SIZE) >> FEXCore::Utils::FEX_PAGE_SHIFT, TOP_KEY);
++  if (PageAddr < PageEnd) {
++    SetFreePages(PageAddr, PageEnd - PageAddr);
++  }
++}
++
+ void* MemAllocator32Bit::Mremap(void* old_address, size_t old_size, size_t new_size, int flags, void* new_address) {
+   size_t OldPagesLength = FEXCore::AlignUp(old_size, FEXCore::Utils::FEX_PAGE_SIZE) >> FEXCore::Utils::FEX_PAGE_SHIFT;
+   size_t NewPagesLength = FEXCore::AlignUp(new_size, FEXCore::Utils::FEX_PAGE_SIZE) >> FEXCore::Utils::FEX_PAGE_SHIFT;
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/LinuxAllocator.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/LinuxAllocator.h
+index dd6ae07..4dbd42b 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/LinuxAllocator.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/LinuxAllocator.h
+@@ -14,6 +14,8 @@ public:
+   virtual ~MemAllocator() = default;
+   virtual void* Mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset) = 0;
+   virtual int Munmap(void* addr, size_t length) = 0;
++  // Records that the caller unmapped [addr, addr + length) with the host syscall itself.
++  virtual void TrackUnmapped(void* addr, size_t length) {}
+   virtual void* Mremap(void* old_address, size_t old_size, size_t new_size, int flags, void* new_address) = 0;
+   virtual uint64_t Shmat(int shmid, const void* shmaddr, int shmflg, uint32_t* ResultAddress) = 0;
+   virtual uint64_t Shmdt(const void* shmaddr) = 0;
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+index f74dfeb..4abc43c 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+@@ -395,16 +395,29 @@ uint64_t SyscallHandler::GuestMunmap(bool Is64Bit, FEXCore::Core::InternalThread
+     // To be more optimal the frontend should provide this code with a valid Thread object earlier.
+     auto lk = FEXCore::GuardSignalDeferringSectionWithFallback(VMATracking.Mutex, Thread);
+ 
+-    if (reinterpret_cast<uintptr_t>(addr) < 0x1'0000'0000ULL) {
++    if (!Is64Bit) {
+       Result = Get32BitAllocator()->Munmap(addr, length);
+       if (FEX::HLE::HasSyscallError(Result)) {
+         return Result;
+       }
+     } else {
++      // The host address space is larger than x86-64's: a range Linux rejects (mm/vma.c do_vmi_munmap, end past
++      // TASK_SIZE) would reach FEX's own mappings above it.
++      // TASK_SIZE_MAX with 4-level paging (arch/x86/include/asm/page_64_types.h).
++      constexpr uint64_t X86_64TaskSizeMax = (1ULL << 47) - FEXCore::Utils::FEX_PAGE_SIZE;
++      const uint64_t Addr = reinterpret_cast<uint64_t>(addr);
++      if (Addr > X86_64TaskSizeMax || Size > X86_64TaskSizeMax - Addr || (length != 0 && Size == 0)) {
++        return -EINVAL;
++      }
++      // An x86-64 range is not confined to either side of 4GB and may be mostly holes: the kernel takes all of it.
+       Result = ::munmap(addr, length);
+       if (Result == -1) {
+         return -errno;
+       }
++      if (reinterpret_cast<uintptr_t>(addr) < 0x1'0000'0000ULL) {
++        // MAP_32BIT mappings come from the 32-bit allocator, which has to learn that their pages are free again.
++        Get32BitAllocator()->TrackUnmapped(addr, length);
++      }
+     }
+     TrackMunmap(Thread, addr, length);
+     PendingResourceDeletion = VMATracking.HasPendingResourceDeletions();
+diff --git a/unittests/FEXLinuxTests/tests/syscalls/munmap_cross_4gb.64.cpp b/unittests/FEXLinuxTests/tests/syscalls/munmap_cross_4gb.64.cpp
+new file mode 100644
+index 0000000..5746e76
+--- /dev/null
++++ b/unittests/FEXLinuxTests/tests/syscalls/munmap_cross_4gb.64.cpp
+@@ -0,0 +1,73 @@
++#include <catch2/catch_test_macros.hpp>
++
++#include <cerrno>
++#include <cstdint>
++#include <sys/mman.h>
++
++// x86-64 munmap takes a range that starts below 4GB and ends above it, and skips the pages that are not mapped.
++
++namespace {
++constexpr size_t PageSize = 4096;
++constexpr uintptr_t FourGB = 0x1'0000'0000ULL;
++
++void* MapAt(uintptr_t Addr, size_t Size, int Flags = MAP_FIXED_NOREPLACE) {
++  return mmap(reinterpret_cast<void*>(Addr), Size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | Flags, -1, 0);
++}
++
++bool IsMapped(uintptr_t Addr) {
++  unsigned char Vec {};
++  return mincore(reinterpret_cast<void*>(Addr), PageSize, &Vec) == 0 || errno != ENOMEM;
++}
++} // namespace
++
++TEST_CASE("munmap: range crossing 4GB") {
++  const uintptr_t Low = FourGB - 16 * PageSize;
++  REQUIRE(MapAt(Low, 16 * PageSize) == reinterpret_cast<void*>(Low));
++  REQUIRE(MapAt(FourGB, 16 * PageSize) == reinterpret_cast<void*>(FourGB));
++
++  CHECK(munmap(reinterpret_cast<void*>(Low), 32 * PageSize) == 0);
++  CHECK(!IsMapped(Low));
++  CHECK(!IsMapped(FourGB - PageSize));
++  CHECK(!IsMapped(FourGB));
++  CHECK(!IsMapped(FourGB + 15 * PageSize));
++}
++
++TEST_CASE("munmap: 4GB range with holes") {
++  REQUIRE(MapAt(0x9000'0000ULL, PageSize) == reinterpret_cast<void*>(0x9000'0000ULL));
++  REQUIRE(MapAt(0x1'4000'0000ULL, PageSize) == reinterpret_cast<void*>(0x1'4000'0000ULL));
++
++  CHECK(munmap(reinterpret_cast<void*>(0x8000'0000ULL), FourGB) == 0);
++  CHECK(!IsMapped(0x9000'0000ULL));
++  CHECK(!IsMapped(0x1'4000'0000ULL));
++}
++
++TEST_CASE("munmap: unaligned length below 4GB") {
++  REQUIRE(MapAt(0x7000'0000ULL, 2 * PageSize) == reinterpret_cast<void*>(0x7000'0000ULL));
++
++  CHECK(munmap(reinterpret_cast<void*>(0x7000'0000ULL), PageSize + 1) == 0);
++  CHECK(!IsMapped(0x7000'0000ULL));
++  CHECK(!IsMapped(0x7000'0000ULL + PageSize));
++}
++
++TEST_CASE("munmap: MAP_32BIT mapping can be mapped again") {
++  auto Ptr = mmap(nullptr, 2 * PageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0);
++  REQUIRE(Ptr != MAP_FAILED);
++  const auto Addr = reinterpret_cast<uintptr_t>(Ptr);
++  REQUIRE(Addr < FourGB);
++
++  CHECK(munmap(Ptr, 2 * PageSize) == 0);
++  CHECK(!IsMapped(Addr));
++  CHECK(MapAt(Addr, 2 * PageSize, MAP_32BIT | MAP_FIXED_NOREPLACE) == Ptr);
++  CHECK(munmap(Ptr, 2 * PageSize) == 0);
++}
++
++TEST_CASE("munmap: invalid arguments") {
++  REQUIRE(MapAt(0x7000'0000ULL, PageSize) == reinterpret_cast<void*>(0x7000'0000ULL));
++
++  CHECK(munmap(reinterpret_cast<void*>(0x7000'0001ULL), PageSize) == -1);
++  CHECK(errno == EINVAL);
++  CHECK(munmap(reinterpret_cast<void*>(0x7000'0000ULL), 0) == -1);
++  CHECK(errno == EINVAL);
++  CHECK(IsMapped(0x7000'0000ULL));
++  CHECK(munmap(reinterpret_cast<void*>(0x7000'0000ULL), PageSize) == 0);
++}
+-- 
+2.39.5 (Apple Git-154)
+

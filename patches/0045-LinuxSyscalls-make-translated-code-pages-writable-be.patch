@@ -1,0 +1,404 @@
+From bc61502a49260daa34fa9251c038a6aaae2d4011 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 03:02:16 +0300
+Subject: [PATCH] LinuxSyscalls: make translated-code pages writable before a
+ kernel write (#5874)
+
+With SMCChecks=mtrack a page that holds translated code is write-protected
+and a guest store to it faults into FEX. A host syscall writing the same
+page (read, pread64, recvfrom) cannot raise that fault: the kernel returns
+EFAULT or a short count, where Linux fills the buffer.
+
+Before such a syscall, invalidate the code in the part of the buffer that
+the guest may write and that can hold code (writable executable mappings,
+writable mirrors of shared ones) and make it writable, as a guest store
+would. The syscall then runs once, unchanged: no retry, so nothing is read
+twice, consumed early or blocks differently. Cost when unused: the
+SMCChecks compare and one VMA lookup per call.
+
+Test: eac-tests/smc-kernel-write (native x86-64: PASS x3) and
+FEXLinuxTests smc/smc-kernel-write.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxEmulation/LinuxSyscalls/Syscalls.h   |  11 ++
+ .../LinuxSyscalls/Syscalls/Passthrough.cpp    |  17 ++-
+ .../LinuxSyscalls/SyscallsSMCTracking.cpp     | 119 ++++++++++-----
+ .../LinuxEmulation/LinuxSyscalls/x32/FD.cpp   |   1 +
+ .../tests/smc/smc-kernel-write.cpp            | 135 ++++++++++++++++++
+ 5 files changed, 247 insertions(+), 36 deletions(-)
+ create mode 100644 unittests/FEXLinuxTests/tests/smc/smc-kernel-write.cpp
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
+index 0813fca..9ad7f3b 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
+@@ -289,8 +289,19 @@ public:
+ 
+   ///// VMA (Virtual Memory Area) tracking /////
+   static bool HandleSegfault(FEXCore::Core::InternalThreadState* Thread, int Signal, void* info, void* ucontext);
++  static void InvalidateWrittenCodePage(FEXCore::Core::InternalThreadState* Thread, uint64_t FaultBase, uint64_t EntryBase,
++                                        const FEX::HLE::VMATracking::VMAEntry& Mapping);
+   void MarkGuestExecutableRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Start, uint64_t Length) override;
+   bool IsSMCHotPage(uint64_t Address) override;
++
++  // SMCChecks=mtrack write-protects pages that hold translated code and relies on SIGSEGV to notice a write. A host
++  // syscall that writes guest memory cannot raise that signal: the kernel returns EFAULT, or a short count that ends
++  // at the protected page (issue #5874). Call this before a read-like syscall that fills [Buf, Buf + Length): it
++  // invalidates the translated code in the part of the range that the guest may write and that can hold code (a
++  // writable guest-executable mapping, or a writable mirror of a shared one) and makes it writable again, exactly
++  // as a guest store would. The syscall itself then runs once, unchanged.
++  // Cost when unused: the SMCChecks compare and, for a buffer in a non-executable private mapping, one VMA lookup.
++  void PrepareGuestBufferForKernelWrite(FEXCore::Core::InternalThreadState* Thread, const void* Buf, size_t Length);
+   void InvalidateGuestCodeRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Start, uint64_t Length) override;
+   std::optional<FEXCore::ExecutableFileSectionInfo>
+   LookupExecutableFileSection(FEXCore::Core::InternalThreadState* Thread, uint64_t GuestAddr) final override;
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Passthrough.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Passthrough.cpp
+index a021a45..42b3364 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Passthrough.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Passthrough.cpp
+@@ -13,6 +13,7 @@ $end_info$
+ #include "LinuxSyscalls/SignalTrace.h"
+ 
+ #include <errno.h>
++#include <sys/socket.h>
+ #include <sys/syscall.h>
+ #include <unistd.h>
+ 
+@@ -219,6 +220,8 @@ static void RegisterCommon(FEX::HLE::SyscallHandler* Handler) {
+   // Wine's thread wake-up protocol moves 16-byte records through a pipe per thread; with FEX_SIGNALTRACE those reads and writes
+   // (and their first 8 bytes, the wait cookie) go into the trace ring.
+   REGISTER_SYSCALL_IMPL(read, [](FEXCore::Core::CpuStateFrame* Frame, int fd, void* buf, size_t count) -> uint64_t {
++    // The buffer may share a page with translated code (issue #5874).
++    FEX::HLE::_SyscallHandler->PrepareGuestBufferForKernelWrite(Frame->Thread, buf, count);
+     uint64_t Result = ::syscall(SYSCALL_DEF(read), fd, buf, count);
+     if (count == 16 && SigTrace::Enabled()) {
+       const int Errno = errno;
+@@ -244,7 +247,13 @@ static void RegisterCommon(FEX::HLE::SyscallHandler* Handler) {
+   REGISTER_SYSCALL_IMPL(socket, SyscallPassthrough3<SYSCALL_DEF(socket)>);
+   REGISTER_SYSCALL_IMPL(connect, SyscallPassthrough3<SYSCALL_DEF(connect)>);
+   REGISTER_SYSCALL_IMPL(sendto, SyscallPassthrough6<SYSCALL_DEF(sendto)>);
+-  REGISTER_SYSCALL_IMPL(recvfrom, SyscallPassthrough6<SYSCALL_DEF(recvfrom)>);
++  REGISTER_SYSCALL_IMPL(recvfrom,
++                        [](FEXCore::Core::CpuStateFrame* Frame, int sockfd, void* buf, size_t len, int flags, struct sockaddr* src_addr,
++                           socklen_t* addrlen) -> uint64_t {
++    FEX::HLE::_SyscallHandler->PrepareGuestBufferForKernelWrite(Frame->Thread, buf, len);
++    uint64_t Result = ::syscall(SYSCALL_DEF(recvfrom), sockfd, buf, len, flags, src_addr, addrlen);
++    SYSCALL_ERRNO();
++  });
+   REGISTER_SYSCALL_IMPL(shutdown, SyscallPassthrough2<SYSCALL_DEF(shutdown)>);
+   REGISTER_SYSCALL_IMPL(bind, SyscallPassthrough3<SYSCALL_DEF(bind)>);
+   REGISTER_SYSCALL_IMPL(listen, SyscallPassthrough2<SYSCALL_DEF(listen)>);
+@@ -457,7 +466,11 @@ namespace x64 {
+     RegisterCommon(Handler);
+     REGISTER_SYSCALL_IMPL_X64(ftruncate, SyscallPassthrough2<SYSCALL_DEF(ftruncate)>);
+     REGISTER_SYSCALL_IMPL_X64(ioctl, SyscallPassthrough3<SYSCALL_DEF(ioctl)>);
+-    REGISTER_SYSCALL_IMPL_X64(pread_64, SyscallPassthrough4<SYSCALL_DEF(pread_64)>);
++    REGISTER_SYSCALL_IMPL_X64(pread_64, [](FEXCore::Core::CpuStateFrame* Frame, int fd, void* buf, size_t count, off_t offset) -> uint64_t {
++      FEX::HLE::_SyscallHandler->PrepareGuestBufferForKernelWrite(Frame->Thread, buf, count);
++      uint64_t Result = ::syscall(SYSCALL_DEF(pread_64), fd, buf, count, offset);
++      SYSCALL_ERRNO();
++    });
+     REGISTER_SYSCALL_IMPL_X64(pwrite_64, SyscallPassthrough4<SYSCALL_DEF(pwrite_64)>);
+     REGISTER_SYSCALL_IMPL_X64(readv, SyscallPassthrough3<SYSCALL_DEF(readv)>);
+     REGISTER_SYSCALL_IMPL_X64(writev, SyscallPassthrough3<SYSCALL_DEF(writev)>);
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+index f74dfeb..740cd1b 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+@@ -42,6 +42,46 @@ static void HandleSegfaultForCodeCacheFinalization(FEXCore::Core::InternalThread
+   }
+ }
+ 
++// Invalidates the translated code of one guest page that is being written and makes it writable again (the page is
++// write-protected while it holds code, SMCChecks=mtrack). Every mirror of a shared mapping is flushed.
++// Callers hold VMATracking.Mutex (shared) and have checked that the guest mapping is writable.
++void SyscallHandler::InvalidateWrittenCodePage(FEXCore::Core::InternalThreadState* Thread, uint64_t FaultBase, uint64_t EntryBase,
++                                               const FEX::HLE::VMATracking::VMAEntry& Mapping) {
++  auto UnprotectRegionCallback = [](uintptr_t Start, uintptr_t Length) {
++    auto rv = mprotect((void*)Start, Length, PROT_READ | PROT_WRITE);
++    LogMan::Throw::AFmt(rv == 0, "mprotect({}, {}) failed", Start, Length);
++  };
++
++  if (Mapping.Flags.Shared) {
++    LOGMAN_THROW_A_FMT(Mapping.Resource, "VMA tracking error");
++
++    auto Offset = FaultBase - EntryBase + Mapping.Offset;
++
++    auto VMA = Mapping.Resource->FirstVMA;
++    LOGMAN_THROW_A_FMT(VMA, "VMA tracking error");
++
++    // Flush all mirrors, remap the page writable as needed
++    do {
++      if (VMA->Offset <= Offset && (VMA->Offset + VMA->Length) > Offset) {
++        auto FaultBaseMirrored = Offset - VMA->Offset + VMA->Base;
++
++        if (VMA->Prot.Writable) {
++          _SyscallHandler->TM.InvalidateGuestCodeRange(Thread, FaultBaseMirrored, FEXCore::Utils::FEX_PAGE_SIZE, UnprotectRegionCallback);
++        } else {
++          _SyscallHandler->TM.InvalidateGuestCodeRange(Thread, FaultBaseMirrored, FEXCore::Utils::FEX_PAGE_SIZE);
++        }
++
++        // Code usually executes from a different mirror than the one that is written through, so every mirror
++        // is accounted: the one that is translated has to become hot.
++        _SyscallHandler->SMCHotPages.RecordFault(FaultBaseMirrored, _SyscallHandler->SMCHotPageFaults());
++      }
++    } while ((VMA = VMA->ResourceNextVMA));
++  } else {
++    _SyscallHandler->TM.InvalidateGuestCodeRange(Thread, FaultBase, FEXCore::Utils::FEX_PAGE_SIZE, UnprotectRegionCallback);
++    _SyscallHandler->SMCHotPages.RecordFault(FaultBase, _SyscallHandler->SMCHotPageFaults());
++  }
++}
++
+ // Handles segfaults from:
+ // - call-ret shadow stack overflow
+ // - guest-side self-modifying code (SMC)
+@@ -91,40 +131,7 @@ bool SyscallHandler::HandleSegfault(FEXCore::Core::InternalThreadState* Thread,
+     }
+ 
+     auto FaultBase = FEXCore::AlignDown(FaultAddress, FEXCore::Utils::FEX_PAGE_SIZE);
+-
+-    auto UnprotectRegionCallback = [](uintptr_t Start, uintptr_t Length) {
+-      auto rv = mprotect((void*)Start, Length, PROT_READ | PROT_WRITE);
+-      LogMan::Throw::AFmt(rv == 0, "mprotect({}, {}) failed", Start, Length);
+-    };
+-
+-    if (Entry->second.Flags.Shared) {
+-      LOGMAN_THROW_A_FMT(Entry->second.Resource, "VMA tracking error");
+-
+-      auto Offset = FaultBase - Entry->first + Entry->second.Offset;
+-
+-      auto VMA = Entry->second.Resource->FirstVMA;
+-      LOGMAN_THROW_A_FMT(VMA, "VMA tracking error");
+-
+-      // Flush all mirrors, remap the page writable as needed
+-      do {
+-        if (VMA->Offset <= Offset && (VMA->Offset + VMA->Length) > Offset) {
+-          auto FaultBaseMirrored = Offset - VMA->Offset + VMA->Base;
+-
+-          if (VMA->Prot.Writable) {
+-            _SyscallHandler->TM.InvalidateGuestCodeRange(Thread, FaultBaseMirrored, FEXCore::Utils::FEX_PAGE_SIZE, UnprotectRegionCallback);
+-          } else {
+-            _SyscallHandler->TM.InvalidateGuestCodeRange(Thread, FaultBaseMirrored, FEXCore::Utils::FEX_PAGE_SIZE);
+-          }
+-
+-          // Code usually executes from a different mirror than the one that is written through, so every mirror
+-          // is accounted: the one that is translated has to become hot.
+-          _SyscallHandler->SMCHotPages.RecordFault(FaultBaseMirrored, _SyscallHandler->SMCHotPageFaults());
+-        }
+-      } while ((VMA = VMA->ResourceNextVMA));
+-    } else {
+-      _SyscallHandler->TM.InvalidateGuestCodeRange(Thread, FaultBase, FEXCore::Utils::FEX_PAGE_SIZE, UnprotectRegionCallback);
+-      _SyscallHandler->SMCHotPages.RecordFault(FaultBase, _SyscallHandler->SMCHotPageFaults());
+-    }
++    InvalidateWrittenCodePage(Thread, FaultBase, Entry->first, Entry->second);
+ 
+     FEXCORE_PROFILE_INSTANT_INCREMENT(Thread, AccumulatedSMCCount, 1);
+ 
+@@ -146,6 +153,50 @@ bool SyscallHandler::HandleSegfault(FEXCore::Core::InternalThreadState* Thread,
+   }
+ }
+ 
++void SyscallHandler::PrepareGuestBufferForKernelWrite(FEXCore::Core::InternalThreadState* Thread, const void* Buf, size_t Length) {
++  if (SMCChecks != FEXCore::Config::CONFIG_SMC_MTRACK || Length == 0) [[likely]] {
++    return;
++  }
++
++  const uint64_t Start = FEXCore::AlignDown(reinterpret_cast<uint64_t>(Buf), FEXCore::Utils::FEX_PAGE_SIZE);
++  const uint64_t Last = reinterpret_cast<uint64_t>(Buf) + Length - 1 < reinterpret_cast<uint64_t>(Buf) ?
++                          UINT64_MAX :
++                          reinterpret_cast<uint64_t>(Buf) + Length - 1;
++  // Exclusive page-aligned end; the last page of the address space is never guest memory.
++  const uint64_t End = FEXCore::AlignDown(Last, FEXCore::Utils::FEX_PAGE_SIZE) + (Last >= UINT64_MAX - FEXCore::Utils::FEX_PAGE_SIZE ? 0 : FEXCore::Utils::FEX_PAGE_SIZE);
++
++  auto lk = FEXCore::GuardSignalDeferringSection<std::shared_lock>(VMATracking.Mutex, Thread);
++
++  // upper_bound gives the first VMA starting after Start; the one before it may still contain Start.
++  auto Entry = VMATracking.VMAs.upper_bound(Start);
++  if (Entry != VMATracking.VMAs.begin() && std::prev(Entry)->first + std::prev(Entry)->second.Length > Start) {
++    --Entry;
++  }
++
++  for (; Entry != VMATracking.VMAs.end() && Entry->first < End; ++Entry) {
++    const auto& Mapping = Entry->second;
++    // The kernel's answer is the real one for memory the guest cannot write; private non-executable memory never
++    // holds translated code.
++    if (!Mapping.Prot.Writable || !(Mapping.Prot.Executable || Mapping.Flags.Shared)) [[likely]] {
++      continue;
++    }
++    const uint64_t From = std::max(Start, Entry->first);
++    const uint64_t To = std::min(End, Entry->first + Mapping.Length);
++    if (Mapping.Flags.Shared) {
++      // Code may be translated from another mirror of the same pages: flush every mirror, page by page.
++      for (uint64_t Page = From; Page < To; Page += FEXCore::Utils::FEX_PAGE_SIZE) {
++        InvalidateWrittenCodePage(Thread, Page, Entry->first, Mapping);
++      }
++    } else {
++      // One invalidation for the whole range; pages without code (and hot pages, already writable) just stay writable.
++      TM.InvalidateGuestCodeRange(Thread, From, To - From, [](uintptr_t Start, uintptr_t Length) {
++        auto rv = mprotect(reinterpret_cast<void*>(Start), Length, PROT_READ | PROT_WRITE);
++        LogMan::Throw::AFmt(rv == 0, "mprotect({}, {}) failed", Start, Length);
++      });
++    }
++  }
++}
++
+ bool SyscallHandler::IsSMCHotPage(uint64_t Address) {
+   return SMCHotPages.IsHot(Address);
+ }
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/x32/FD.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/x32/FD.cpp
+index c5dad94..f5298e1 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/x32/FD.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/x32/FD.cpp
+@@ -788,6 +788,7 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
+   REGISTER_SYSCALL_IMPL_X32(
+     pread_64, [](FEXCore::Core::CpuStateFrame* Frame, int fd, void* buf, uint32_t count, uint32_t offset_low, uint32_t offset_high) -> uint64_t {
+       uint64_t Offset = (uint64_t(offset_high) << 32) | offset_low;
++      FEX::HLE::_SyscallHandler->PrepareGuestBufferForKernelWrite(Frame->Thread, buf, count);
+       uint64_t Result = ::pread64(fd, buf, count, Offset);
+       SYSCALL_ERRNO();
+     });
+diff --git a/unittests/FEXLinuxTests/tests/smc/smc-kernel-write.cpp b/unittests/FEXLinuxTests/tests/smc/smc-kernel-write.cpp
+new file mode 100644
+index 0000000..c3ad85c
+--- /dev/null
++++ b/unittests/FEXLinuxTests/tests/smc/smc-kernel-write.cpp
+@@ -0,0 +1,135 @@
++/*
++  tests for system calls that store into a page of executed code (read, pread, recv).
++  The kernel's write raises no SIGSEGV, so the page's write protection has to be handled around the system call.
++*/
++
++#include <cstdint>
++#include <cstring>
++
++#include <fcntl.h>
++#include <sys/mman.h>
++#include <sys/socket.h>
++#include <unistd.h>
++
++#include <catch2/catch_test_macros.hpp>
++
++namespace {
++constexpr size_t PageSize = 4096;
++
++// mov eax, imm32; ret
++void EmitCode(char* Code, uint32_t Value) {
++  Code[0] = 0xB8;
++  memcpy(Code + 1, &Value, sizeof(Value));
++  Code[5] = 0xC3;
++}
++
++int Call(char* Code) {
++  return ((int (*)())Code)();
++}
++
++char* MapRWX(size_t Pages) {
++  return (char*)mmap(nullptr, Pages * PageSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON, -1, 0);
++}
++
++int FileWith(const char* Data, size_t Size) {
++  int fd = memfd_create("smc-kernel-write", 0);
++  REQUIRE(write(fd, Data, Size) == (ssize_t)Size);
++  REQUIRE(lseek(fd, 0, SEEK_SET) == 0);
++  return fd;
++}
++} // namespace
++
++TEST_CASE("SMC: read") {
++  auto Code = MapRWX(1);
++  EmitCode(Code, 1);
++  REQUIRE(Call(Code) == 1);
++
++  char New[6];
++  EmitCode(New, 2);
++  int fd = FileWith(New, sizeof(New));
++  CHECK(read(fd, Code, sizeof(New)) == sizeof(New));
++  CHECK(Call(Code) == 2);
++
++  // An ordinary store is still tracked afterwards.
++  Code[1] = 3;
++  CHECK(Call(Code) == 3);
++  close(fd);
++}
++
++TEST_CASE("SMC: pread") {
++  auto Code = MapRWX(1);
++  EmitCode(Code, 1);
++  REQUIRE(Call(Code) == 1);
++
++  char New[6];
++  EmitCode(New, 2);
++  int fd = FileWith(New, sizeof(New));
++  CHECK(pread(fd, Code, sizeof(New), 0) == sizeof(New));
++  CHECK(Call(Code) == 2);
++  close(fd);
++}
++
++TEST_CASE("SMC: recv") {
++  auto Code = MapRWX(1);
++  EmitCode(Code, 1);
++  REQUIRE(Call(Code) == 1);
++
++  char New[6];
++  EmitCode(New, 2);
++  int fds[2];
++  REQUIRE(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
++  REQUIRE(write(fds[1], New, sizeof(New)) == sizeof(New));
++  CHECK(recv(fds[0], Code, sizeof(New), 0) == sizeof(New));
++  CHECK(Call(Code) == 2);
++  close(fds[0]);
++  close(fds[1]);
++}
++
++TEST_CASE("SMC: read across pages") {
++  // Starts in a data page and covers two pages of executed code.
++  auto Mem = MapRWX(3);
++  EmitCode(Mem + PageSize, 1);
++  EmitCode(Mem + 2 * PageSize, 2);
++  REQUIRE(Call(Mem + PageSize) == 1);
++  REQUIRE(Call(Mem + 2 * PageSize) == 2);
++
++  static char New[PageSize + PageSize / 2 + 6];
++  EmitCode(New + PageSize / 2, 11);
++  EmitCode(New + PageSize / 2 + PageSize, 12);
++  int fd = FileWith(New, sizeof(New));
++  CHECK(read(fd, Mem + PageSize / 2, sizeof(New)) == sizeof(New));
++  CHECK(Call(Mem + PageSize) == 11);
++  CHECK(Call(Mem + 2 * PageSize) == 12);
++  close(fd);
++}
++
++TEST_CASE("SMC: short read ending at a code page") {
++  // The pipe runs dry exactly where the executed page starts: the bytes that are there, without waiting for more.
++  auto Mem = MapRWX(2);
++  EmitCode(Mem + PageSize, 1);
++  REQUIRE(Call(Mem + PageSize) == 1);
++
++  static char Data[PageSize / 2];
++  int fds[2];
++  REQUIRE(pipe(fds) == 0);
++  REQUIRE(write(fds[1], Data, sizeof(Data)) == sizeof(Data));
++  CHECK(read(fds[0], Mem + PageSize / 2, PageSize) == sizeof(Data));
++  CHECK(Call(Mem + PageSize) == 1);
++  close(fds[0]);
++  close(fds[1]);
++}
++
++TEST_CASE("SMC: read into read-only code") {
++  auto Code = MapRWX(1);
++  EmitCode(Code, 1);
++  REQUIRE(mprotect(Code, PageSize, PROT_READ | PROT_EXEC) == 0);
++  REQUIRE(Call(Code) == 1);
++
++  char New[6];
++  EmitCode(New, 2);
++  int fd = FileWith(New, sizeof(New));
++  CHECK(read(fd, Code, sizeof(New)) == -1);
++  CHECK(errno == EFAULT);
++  CHECK(Call(Code) == 1);
++  close(fd);
++}
+-- 
+2.39.5 (Apple Git-154)
+
