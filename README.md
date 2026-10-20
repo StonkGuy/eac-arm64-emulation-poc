@@ -41,7 +41,7 @@ Linux.
 
 | you need | why |
 |---|---|
-| **FEX-Emu 2610 with the patches: [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) tag `eac-2610.2`** | see [docs/patches.md](docs/patches.md); build with `scripts/build-fex.sh` |
+| **FEX-Emu 2610 with the patches: [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) tag `eac-2610.3`** | see [docs/patches.md](docs/patches.md); build with `scripts/build-fex.sh` |
 | **an arm64 Linux host** (tested: Apple M2 with Fedora Asahi Remix + muvm, or macOS 27 with a steamac libkrun guest) | a host with 16 KB pages needs a guest with 4 KB pages, hence the muvm VM; on a 4 KB-page host FEX runs directly (untested) |
 | **Proton Experimental 11.0** and the *Proton EasyAntiCheat Runtime*, Steam on the same side of the VM boundary as FEX | the versions everything here was measured with |
 | host memory tuning (`scripts/host-tune.sh`, Asahi, 16 GB) | with 16 GB the host runs out of memory around an 8 GB VM plus the GPU buffers; zswap/zram/watermark settings keep the OOM killer away |
@@ -63,6 +63,7 @@ needed to run; 0008 and 0010 are correctness fixes in the same area, the rest is
 | 0022–0026 second wave | fidelity | host-stack leak per seccomp trap (0022), guest reads of FEX's call/ret shadow-stack guard pages (0023), TF trap on the IRETQ target (0025), the signal alt stack while a thread exits on it (0026); 0024 is a profiler option. Found on a second title (THE FINALS) whose anti-tamper bootstrapper observes them; trap-, fault- and exit-path only |
 | 0033 `/proc/<pid>/maps` | fix | the maps file lists only the emulated process's mappings (below 2^47), not FEX and its AArch64 host libraries. Without it an EAC launcher module that injects into a library it picks from the child's maps chose a host library and failed with `210 Unexpected error. (#1)` (seen on Mini Royale via Proton; VRChat's deployment still serves an older module that is not affected yet) |
 | 0035 SMC, remote writes | fix | a code page the guest makes writable (`mprotect` RX to RWX) stays writable for other processes, so a hook written with `NtWriteVirtualMemory` no longer fails with `STATUS_PARTIAL_COPY`. Based on yungtry's patch 0028; consumer The Division 2 (per its author); only with `SMCChecks=mtrack` |
+| 0036–0039, 0041–0053 (eac-2610.3) | fix / fidelity | seccomp and Syscall User Dispatch trap paths as Wine 11 uses them (trapped syscall never runs, SUD emulated, no lost or leaked trap frames, EFLAGS bit 31), `execve`/`execveat` under seccomp, `InSyscallInfo` after `rt_sigreturn`, `-EFAULT` for bad pointers, kernel writes into code pages, `munmap` across 4 GiB, SIGBUS stops hidden from a tracer (The Division 2's EAC launcher). See [docs/patches.md](docs/patches.md#h-fixes-since-eac-26102--patches-00360039-00410053) |
 
 ## What is changed where
 
@@ -70,7 +71,7 @@ Three different kinds of change are involved. Only the first is new code; nothin
 
 | layer | what | kind | where |
 |---|---|---|---|
-| **FEX-Emu (emulator)** | 0001 `ptrace` emulation, 0007/0008/0010 signal and seccomp fidelity, 0004 invalidation, 0002 SMC hot pages, 0011–0020 kernel-fidelity gaps (debug registers, `/proc`, `arch_prctl`, regsets, `restart_syscall`, signal frame), 0022/0023/0025/0026 host-stack, fault and single-step fidelity, 0033 `/proc/<pid>/maps`, 0035 SMC remote writes, 0024 profiler option, 0003/0005/0006/0009 diagnostics | **new source code**, one commit per patch on FEX-2610 | [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) branch `eac-2610` (tests in `eac-tests/`), built by `scripts/build-fex.sh`; `patches/` is a generated snapshot |
+| **FEX-Emu (emulator)** | 0001 `ptrace` emulation, 0007/0008/0010 signal and seccomp fidelity, 0004 invalidation, 0002 SMC hot pages, 0011–0020 kernel-fidelity gaps (debug registers, `/proc`, `arch_prctl`, regsets, `restart_syscall`, signal frame), 0022/0023/0025/0026 host-stack, fault and single-step fidelity, 0033 `/proc/<pid>/maps`, 0035 SMC remote writes, 0036–0039/0041–0053 trap, exec and syscall fixes, 0024 profiler option, 0003/0005/0006/0009 diagnostics | **new source code**, one commit per patch on FEX-2610 | [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) branch `eac-2610` (tests in `eac-tests/`), built by `scripts/build-fex.sh`; `patches/` is a generated snapshot |
 | **Proton / Wine** | `WINE_CPU_TOPOLOGY=16:…` (report 16 CPUs; fixes the pre-join stall) | **stock Proton setting**, no patch | launch options, `scripts/set-launch-options.sh` |
 | | `EAC_LAUNCHERDIR`, `PROTON_EAC_RUNTIME` (load the EAC runtime), `WINEDEBUG=-all`, `PROTON_USE_XALIA=0` | stock Proton settings | launch options |
 | | `DXVK_CONFIG_FILE` → `dxgi.maxDeviceMemory`/`maxSharedMemory` = 3072 | stock DXVK setting | `scripts/dxvk.conf` |
@@ -102,7 +103,7 @@ On a Steam Frame (or another SteamOS arm64 device), follow [docs/steam-frame.md]
 
 ```sh
 sudo dnf install steam muvm fex-emu && steam          # base install, log in, install VRChat, launch it once
-scripts/build-fex.sh                                  # clones and builds StonkGuy/FEX tag eac-2610.2 into work/FEX
+scripts/build-fex.sh                                  # clones and builds StonkGuy/FEX tag eac-2610.3 into work/FEX
 scripts/vm/install-overlay.sh
 (cd work/FEX/eac-tests/ptrace-inject && ./build.sh clang)
 scripts/vm/run-test-in-vm.sh work/FEX/eac-tests/ptrace-inject/ptrace_inject_test   # must print RESULT: PASS

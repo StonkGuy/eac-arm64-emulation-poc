@@ -1,0 +1,140 @@
+From 06f9ae1ee34eeee361b538f554a1004cefb8a20f Mon Sep 17 00:00:00 2001
+From: aqua <cps@Aquas-MacBook-Air.local>
+Date: Mon, 19 Oct 2026 21:40:52 +0300
+Subject: [PATCH] Signals: reuse the host stack of abandoned seccomp/SUD trap
+ frames
+
+The synchronous SIGSYS of a trapped syscall is raised from the C++ half of the
+syscall handler, and its guest frame was built below those frames. When the
+guest handler never returns (it switches context instead, as Wine's raw
+NtContinue path and longjmp-style handlers do), each trap left the C++ frames
+and the ContextBackup on the host stack: about 2.9 KiB per trap, 580 MB after
+eac-tests/sigsys-redirect phase C's 200000 traps, which crashed the test with
+SIGSEGV in a memory-limited VM (6/30 runs) while a GitHub runner, with more
+memory, only grew.
+
+rt_sigreturn of a trap frame always returns to the dispatcher at the stack
+level the guest code ran at, so the C++ frames are dead once the trap is
+delivered: build the frame at that level instead. Track outstanding trap
+frames per thread (16 deep); on the next trap, a frame whose guest frame the
+guest RSP is back above (and at or above where that trap was taken) was
+abandoned, and its host stack level is reused. Only the trap SIGSYS path is
+touched; other signals and the common path are unchanged. Present before #24
+(0d13aba leaks the same way); upstream FEX builds every guest frame on the
+host stack too.
+
+eac-tests/sigsys-redirect phase C now also checks that VmRSS grows less than
+32 MiB (FEX before: ~580 MB, native: ~0).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxSyscalls/SignalDelegator.cpp         | 46 ++++++++++++++++++-
+ .../LinuxSyscalls/ThreadManager.h             | 14 ++++++
+ 2 files changed, 59 insertions(+), 1 deletion(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+index e4607ff..5108e78 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+@@ -262,6 +262,17 @@ void SignalDelegator::RestoreThreadState(FEXCore::Core::InternalThreadState* Thr
+   uintptr_t NewSP = OldSP;
+   auto Context = reinterpret_cast<ArchHelpers::Context::ContextBackup*>(NewSP);
+ 
++  if (Type != RestoreType::TYPE_PAUSE) {
++    // A trap frame that returns is no longer outstanding, nor is any newer one (those were abandoned).
++    auto ThreadObject = FEX::HLE::ThreadManager::GetStateObjectFromFEXCoreThread(Thread);
++    for (size_t i = ThreadObject->TrapSignalFrameCount; i > 0; --i) {
++      if (ThreadObject->TrapSignalFrames[i - 1].ContextBackup == NewSP) {
++        ThreadObject->TrapSignalFrameCount = i - 1;
++        break;
++      }
++    }
++  }
++
+   // Restore host state
+   ArchHelpers::Context::RestoreContext(ucontext, Context);
+   // Put back the InSyscallInfo of the interrupted code. The current value belongs to the rt_sigreturn syscall op, whose
+@@ -324,6 +335,32 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
+                                                   GuestSigAction* GuestAction, stack_t* GuestStack) {
+   auto ThreadObject = FEX::HLE::ThreadManager::GetStateObjectFromFEXCoreThread(Thread);
+ 
++  // The synchronous SIGSYS of a trapped syscall is raised from the C++ half of the syscall handler. Those frames are never
++  // resumed: rt_sigreturn of a trap frame always goes back to the dispatcher at the stack level the guest code ran at
++  // (RestoreFrame_*). So the frame is built at that level rather than below them, and when the guest has left the handler of
++  // an earlier trap without rt_sigreturn (its stack pointer is back above that handler's frame and at or above where that
++  // trap was taken, e.g. a handler that switches context like NtContinue), that frame's host stack is reused too. Without
++  // this every such trap leaks a few KiB of host stack, until the thread runs out of memory.
++  const int SigSysCode = Signal == SIGSYS ? static_cast<siginfo_t*>(info)->si_code : 0;
++  const bool IsTrapSignal = (SigSysCode == 1 /* SYS_SECCOMP */ || SigSysCode == 2 /* SYS_USER_DISPATCH */) && ThreadObject->SeccompTrapRIP &&
++                            !CTX->IsAddressInCodeBuffer(Thread, ArchHelpers::Context::GetPc(ucontext));
++  if (IsTrapSignal) {
++    const uint64_t GuestRSP = Thread->CurrentFrame->State.gregs[FEXCore::X86State::REG_RSP];
++    while (ThreadObject->TrapSignalFrameCount) {
++      const auto& Abandoned = ThreadObject->TrapSignalFrames[ThreadObject->TrapSignalFrameCount - 1];
++      if (GuestRSP <= Abandoned.GuestFrame || GuestRSP < Abandoned.GuestRSP) {
++        break;
++      }
++      ThreadObject->JITStackSP = Abandoned.JITStackSP;
++      --ThreadObject->TrapSignalFrameCount;
++      --Thread->CurrentFrame->SignalHandlerRefCounter;
++    }
++    const uint64_t Level = ThreadObject->JITStackSP ? ThreadObject->JITStackSP : Thread->CurrentFrame->ReturningStackLocation;
++    if (Level > ArchHelpers::Context::GetSp(ucontext)) {
++      ArchHelpers::Context::SetSp(ucontext, Level);
++    }
++  }
++
+   auto ContextBackup = StoreThreadState(Thread, Signal, ucontext);
+   // Remember the guest-visible mask of the interrupted code: rt_sigreturn puts it back (SignalMaskFix).
+   ContextBackup->GuestSignalMask = ThreadObject->SignalInfo.CurrentSignalMask.Val;
+@@ -337,7 +374,6 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
+   // between the filter deciding to trap and the SIGSYS being delivered must see the interrupted state (RIP at the
+   // `syscall`), otherwise its handler returns past the syscall and the trap is skipped without its SIGSYS ever
+   // reaching the guest.
+-  const int SigSysCode = Signal == SIGSYS ? static_cast<siginfo_t*>(info)->si_code : 0;
+   if (SigSysCode == 1 /* SYS_SECCOMP */ || SigSysCode == 2 /* SYS_USER_DISPATCH */) {
+     ContextBackup->SeccompTrapRIP = ThreadObject->SeccompTrapRIP;
+     ThreadObject->SeccompTrapRIP = 0;
+@@ -433,6 +469,14 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
+ 
+   if (Is64BitMode) {
+     NewGuestSP = SetupFrame_x64(Thread, ContextBackup, Frame, Signal, HostSigInfo, ucontext, GuestAction, GuestStack, NewGuestSP, eflags);
++    if (IsTrapSignal && ThreadObject->TrapSignalFrameCount < ThreadObject->MaxTrapSignalFrames) {
++      ThreadObject->TrapSignalFrames[ThreadObject->TrapSignalFrameCount++] = {
++        .GuestFrame = NewGuestSP,
++        .GuestRSP = OldGuestSP,
++        .JITStackSP = ContextBackup->SavedJITStackSP,
++        .ContextBackup = reinterpret_cast<uint64_t>(ContextBackup),
++      };
++    }
+   } else {
+     const bool SigInfoFrame = (GuestAction->sa_flags & SA_SIGINFO) == SA_SIGINFO;
+     if (SigInfoFrame) {
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
+index d8c40cf..d0b0d7c 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
+@@ -115,6 +115,20 @@ struct ThreadStateObject : public FEXCore::Allocator::FEXAllocOperators {
+   // drop abandoned syscall-handler frames instead of leaking them.
+   uint64_t JITStackSP {};
+ 
++  // Guest frames of the synchronous SIGSYS of trapped syscalls (seccomp or Syscall User Dispatch) whose handler has not
++  // done rt_sigreturn yet, newest last. A handler may never return: it can switch to another context instead (Wine and
++  // Windows code do this for NtContinue). Linux keeps nothing besides the guest frame, but FEX keeps the frame's host
++  // state on the host stack, so delivery uses this to find frames the guest has abandoned and reuse their host stack.
++  struct TrapSignalFrame {
++    uint64_t GuestFrame;   ///< guest RSP the handler was entered with (the frame lies at and above it)
++    uint64_t GuestRSP;     ///< guest RSP of the code that made the trapped syscall
++    uint64_t JITStackSP;   ///< JITStackSP of that code (the host stack level it ran at)
++    uint64_t ContextBackup; ///< host address of the frame's ContextBackup
++  };
++  static constexpr size_t MaxTrapSignalFrames = 16;
++  TrapSignalFrame TrapSignalFrames[MaxTrapSignalFrames] {};
++  size_t TrapSignalFrameCount {};
++
+   // personality emulation.
+   uint32_t persona {};
+ 
+-- 
+2.39.5 (Apple Git-154)
+

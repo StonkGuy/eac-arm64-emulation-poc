@@ -1,12 +1,12 @@
 # The patch series
 
-Twenty-seven patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
+Forty-four patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
 (`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610; 0022–0026 on top of 0001–0020
-(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026. They are not all the same kind of thing, so they are
+(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026, and 0036–0039 and 0041–0053 (group H) in `eac-2610.3`. They are not all the same kind of thing, so they are
 grouped here by what they are for.
 
 **Where the code lives.** Each patch is one commit on branch `eac-2610` of [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) (release tag
-`eac-2610.2`), and every test named below is in that branch's
+`eac-2610.3`), and every test named below is in that branch's
 [`eac-tests/`](https://github.com/StonkGuy/FEX/tree/eac-2610/eac-tests). `patches/` here is a generated snapshot of
 those commits; send changes to the fork.
 
@@ -21,6 +21,7 @@ The groups:
 | **E. Kernel-fidelity gaps** | 0011, 0012, 0013, 0014, 0015, 0033 | the answers a real kernel gives for `arch_prctl`, the debug registers, `/proc/<pid>/status`, unknown regsets, `restart_syscall` and `/proc/<pid>/maps` |
 | **F. Signal frames and faults** | 0016–0020 | what Windows exception handling under Wine reads from and writes to a signal frame |
 | **G. Second title** | 0022–0026 | what a second title's anti-tamper bootstrapper (THE FINALS) observes: host stack per SIGSYS trap, faults on FEX's own mappings, single-step after `iretq`, a thread exiting on its signal stack |
+| **H. Fixes since `eac-2610.2`** | 0036–0039, 0041–0053 | trap, signal, exec and SMC paths that Wine 11, the EAC launcher or a test observed differently from Linux |
 
 Patches 0001–0010 are needed for the game (0001 to inject at all, 0002 so the injected client finishes loading, 0007 to
 avoid the disconnects, 0010 for the seccomp/SIGSYS path; 0008 is a correctness fix in the same area and 0004 is
@@ -338,6 +339,37 @@ syscalls crashed 3/3 without 0026 and completes 160/160 with it, as natively.
 On VRChat the five patches change nothing measurable: in back-to-back idle in-world runs under the same host
 conditions, 0001–0020 gave 37.7 and 41.3 fps and 0001–0026 gave 39.0, 48.6 and 41.7 fps (1% lows 17.5–18.7 and
 18.4–22.1), every run joined a world, and the EAC launcher finished with `301` on the 0001–0026 build.
+
+## H. Fixes since `eac-2610.2` — patches 0036–0039, 0041–0053
+
+Added in `eac-2610.3`, each through a pull request on the fork with its test in `eac-tests/`. Since they arrive through
+merged pull requests, their commit order is not their number order; `patches/` keeps the commit order. 0034 and 0040
+are held (no consumer yet) and are not in the release.
+
+| patch | behaviour | stock FEX | patched | test |
+|---|---|---|---|---|
+| 0036 | a `SECCOMP_RET_TRAP` syscall never runs and its SIGSYS is forced, as Linux does | with SIGSYS blocked the trapped syscall ran as a Linux syscall | rolled back, SIGSYS forced (default action if blocked or ignored) | `eac-tests/seccomp-trap-blocked` |
+| 0037 | a code page is write-protected before its translation is published | a second thread compiling from the same page could run stale code after a store | protection first, then publish | `eac-tests/smc-same-page` |
+| 0038 | `execve` with a seccomp filter installed keeps the `FEX_EXECVEFD` path for FD execs only | a `#!` script exec failed with `FEX_NEEDSSECCOMP=1` | same condition as without seccomp | `eac-tests/execve-seccomp` |
+| 0039 | an FD `execveat` through the FEX loader keeps `argv[0]` | `fexecve()` argv shifted by one | caller's `argv[0]` kept | `eac-tests/fdexec-argv` |
+| 0041 | every `rt_sigreturn` restores the interrupted `InSyscallInfo` | the next async signal built its frame from a stale, higher RSP over live stack (Go/.NET preemption) | no stale marker | `eac-tests/sigreturn-syscallinfo` |
+| 0042 | bad user pointers in FEX's own syscall handlers return `-EFAULT` | SIGSEGV inside FEX killed the process | `-EFAULT`, as Linux | `eac-tests/syscall-efault`, unittests |
+| 0043 | `FEX_SIGNALTRACE`'s `/dev/shm` ring is unlinked on exit (follow-up to 0007) | left behind (16 MiB per process) | removed on a regular exit | `eac-tests/sigtrace-unlink` |
+| 0044 | every I/O step of the synthesized `/proc/<pid>/maps` is checked (follow-up to 0033) | a short write or `EINTR` truncated the file | retried; on failure the host file is used | `eac-tests/proc-maps` |
+| 0045 | a kernel write (`read`, `recvfrom`, ...) into a page holding translated code succeeds | `EFAULT` or a short count | code invalidated and page made writable first (FEX-Emu#5874) | `eac-tests/smc-kernel-write` |
+| 0046 | an x86-64 `munmap` may cross 4 GiB | `EOVERFLOW` (Chromium-based clients abort) | host `munmap`, 32-bit allocator told (FEX-Emu#5847) | `eac-tests/munmap-4g` |
+| 0047 | FEX's own SIGBUS alignment stops are hidden from a ptrace tracer | the EAC launcher of The Division 2 saw ~1000 SIGBUS stops and failed with error 210 | hidden like FEX's SIGTRAP/SIGSEGV stops (by yungtry) | `eac-tests/ptrace-sigbus` |
+| 0048, 0049 | `prctl(PR_SET_SYSCALL_USER_DISPATCH)` is emulated per thread | passed to the host (`EINVAL` on Arm64), so Wine 11's raw-syscall trap path ran Windows syscalls as Linux ones | SIGSYS with `SYS_USER_DISPATCH`, one branch per syscall when unused | `eac-tests/sigsys-redirect` |
+| 0050 | reserved EFLAGS bit 31 stays clear in signal frames taken outside JIT code | the packed overflow flag leaked as bit 31 (`0x80000ad7` vs `0xad7`) into the Windows CONTEXT | bit clear | `eac-tests/sigsys-redirect` |
+| 0051, 0052 | only the trap's own SIGSYS (seccomp or Syscall User Dispatch) takes the resume address | an async signal arriving between filter and delivery swallowed the trap | the trap is always delivered | `eac-tests/signal-race` |
+| 0053 | a trap frame whose handler switches context instead of returning releases its host stack | ~2.9 KiB host stack leaked per trap; Wine's raw `NtContinue` pattern crashed after ~200 000 traps in a memory-limited VM | reused on the next trap | `eac-tests/sigsys-redirect` (phase C) |
+
+**Cost.** 0048 adds one branch per syscall; 0045 one compare and one VMA lookup per affected syscall when SMC tracking
+is on; the others act only on their own path (traps, faults, exec, exit).
+
+**Verified by.** Each test passes natively on x86-64 (GitHub runners) and under the patched FEX. In the SteamOS guest
+on the release code: `eac-tests/run-all.sh` 33/33 expected (the `eac-2610.2`-era build gave 30/31), `sigsys-redirect`
+30/30 runs, and VRChat with EAC (flat, Proton Experimental) joined a world with EAC Session Begin on 3 launches (two stayed 10 min, one 2 min); one more launch hit the intermittent world-load freeze that the `eac-2610.2`-era build shows as well (not FEX-specific).
 
 ---
 

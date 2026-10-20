@@ -1,0 +1,41 @@
+From a9cd63280c6b544b75895786b297e272bf462e2d Mon Sep 17 00:00:00 2001
+From: aqua <cps@Aquas-MacBook-Air.local>
+Date: Sun, 18 Oct 2026 21:17:12 +0300
+Subject: [PATCH] FEXCore: keep the packed NZCV bytes out of reconstructed
+ EFLAGS
+
+ReconstructCompactedEFLAGS ORs every flags[] byte below 32 into EFLAGS at its
+own bit position, except the multi-bit ones. The four bytes at RFLAG_NZCV_LOC
+(24-27) hold the packed SF/ZF/CF/OF and were not excluded, so a set OF (NZCV V,
+bit 28 = bit 4 of byte 27) showed up as reserved EFLAGS bit 31 in signal frames
+taken outside JIT code, e.g. every seccomp SIGSYS. Wine copies that EFLAGS into
+its syscall frame and the CONTEXT a Windows program sees (native: 0xad7, FEX:
+0x80000ad7 in eac-tests/sigsys-redirect). Same code on upstream main 741e146.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ FEXCore/Source/Interface/Core/Core.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+index 2a07501..cf8b146 100644
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@ -201,8 +201,13 @@ uint32_t ContextImpl::ReconstructCompactedEFLAGS(FEXCore::Core::InternalThreadSt
+     case X86State::RFLAG_SF_RAW_LOC:
+     case X86State::RFLAG_OF_RAW_LOC:
+     case X86State::RFLAG_DF_RAW_LOC:
++    case X86State::RFLAG_NZCV_LOC:
++    case X86State::RFLAG_NZCV_1_LOC:
++    case X86State::RFLAG_NZCV_2_LOC:
++    case X86State::RFLAG_NZCV_3_LOC:
+       // Intentionally do nothing.
+-      // These contain multiple bits which can corrupt other members when compacted.
++      // These contain multiple bits which can corrupt other members when compacted. The NZCV bytes hold the packed
++      // SF/ZF/CF/OF handled below; ORing them in raw would leak e.g. the overflow bit into reserved EFLAGS bit 31.
+       break;
+     default: EFLAGS |= uint32_t {Frame->State.flags[i]} << i; break;
+     }
+-- 
+2.39.5 (Apple Git-154)
+

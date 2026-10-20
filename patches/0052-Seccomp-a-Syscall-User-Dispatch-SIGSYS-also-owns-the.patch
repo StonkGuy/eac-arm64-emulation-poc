@@ -1,0 +1,40 @@
+From 41f1c23ca2f1c0f8242a308878238392676c9fe8 Mon Sep 17 00:00:00 2001
+From: aqua <cps@Aquas-MacBook-Air.local>
+Date: Mon, 19 Oct 2026 09:48:36 +0300
+Subject: [PATCH] Seccomp: a Syscall User Dispatch SIGSYS also owns the trap's
+ resume address
+
+Since PR #24 the SUD path records SeccompTrapRIP too; its SIGSYS has
+si_code SYS_USER_DISPATCH (2). Restricting the address to si_code
+SYS_SECCOMP broke eac-tests/sigsys-redirect case F (uc.rip at the
+syscall instead of after it).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp   | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+index 451801c..e4607ff 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+@@ -333,10 +333,12 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
+   // itself, so the ucontext RIP now differs from it: rt_sigreturn then takes the path that restores the handler's
+   // registers and resumes at the ucontext RIP, instead of the path that resets to the interrupted state and re-runs
+   // the syscall (discarding the handler's return value). See SeccompEmulator for the kernel semantics.
+-  // Only the trap's own SIGSYS takes it: an asynchronous signal that arrives between the filter deciding to trap and
+-  // the SIGSYS being delivered must see the interrupted state (RIP at the `syscall`), otherwise its handler returns
+-  // past the syscall and the trap is skipped without its SIGSYS ever reaching the guest.
+-  if (Signal == SIGSYS && static_cast<siginfo_t*>(info)->si_code == 1 /* SYS_SECCOMP */) {
++  // Only the trap's own SIGSYS (seccomp or Syscall User Dispatch) takes it: an asynchronous signal that arrives
++  // between the filter deciding to trap and the SIGSYS being delivered must see the interrupted state (RIP at the
++  // `syscall`), otherwise its handler returns past the syscall and the trap is skipped without its SIGSYS ever
++  // reaching the guest.
++  const int SigSysCode = Signal == SIGSYS ? static_cast<siginfo_t*>(info)->si_code : 0;
++  if (SigSysCode == 1 /* SYS_SECCOMP */ || SigSysCode == 2 /* SYS_USER_DISPATCH */) {
+     ContextBackup->SeccompTrapRIP = ThreadObject->SeccompTrapRIP;
+     ThreadObject->SeccompTrapRIP = 0;
+   }
+-- 
+2.39.5 (Apple Git-154)
+
