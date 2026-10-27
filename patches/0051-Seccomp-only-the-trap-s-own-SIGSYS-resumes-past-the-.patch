@@ -1,4 +1,4 @@
-From 40074b032047a7685558e0f05b31e72b933e1876 Mon Sep 17 00:00:00 2001
+From 1ccbe39e4b8079c8a81dc2b315241fe68b727af1 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:39:57 +0300
 Subject: [PATCH] Seccomp: only the trap's own SIGSYS resumes past the trapped

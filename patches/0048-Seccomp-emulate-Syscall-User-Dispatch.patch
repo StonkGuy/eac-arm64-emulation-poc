@@ -1,4 +1,4 @@
-From 61271671b8f1d3103d4234bf03603d9e509908d3 Mon Sep 17 00:00:00 2001
+From c46eb94cc7cf3be2cf3be9b452c67c997a9f187e Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:11:47 +0300
 Subject: [PATCH] Seccomp: emulate Syscall User Dispatch

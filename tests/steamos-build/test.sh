@@ -11,7 +11,7 @@ cat > "$d/bin/git" <<'EOF'
 { printf 'git'; printf ' <%s>' "$@"; printf '\n'; } >> "$MOCK_LOG"
 case "$1" in
 clone) for target do :; done; mkdir -p "$target/.git";;
-rev-parse) if [ "$2" = HEAD ]; then echo "${MOCK_HEAD:-938eedfcd79eb00e86561fbdf4933770766f0ba9}"; else echo 938eedfcd79eb00e86561fbdf4933770766f0ba9; fi;;
+rev-parse) if [ "$2" = HEAD ]; then echo "${MOCK_HEAD:-39107ddbb1f1f9ad3778a5aba65f9947cd7e84ce}"; else echo 39107ddbb1f1f9ad3778a5aba65f9947cd7e84ce; fi;;
 esac
 EOF
 cat > "$d/bin/cmake" <<'EOF'

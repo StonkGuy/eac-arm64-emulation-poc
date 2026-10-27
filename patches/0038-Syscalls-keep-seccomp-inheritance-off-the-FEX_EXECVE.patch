@@ -1,4 +1,4 @@
-From 2c1ecfff797e27cf16f48242e16d981cc5cf2d70 Mon Sep 17 00:00:00 2001
+From a6ee623ed5cd43b2e06f96fedccbd5a698609abc Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Tue, 13 Oct 2026 00:06:24 +0300
 Subject: [PATCH] Syscalls: keep seccomp inheritance off the FEX_EXECVEFD path

@@ -1,4 +1,4 @@
-From 807bcc3788ab43fd88a68a942872bf754073414b Mon Sep 17 00:00:00 2001
+From 489d753f9116bb594fb20d67b6e021d4abce2910 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Mon, 12 Oct 2026 02:49:00 +0300
 Subject: [PATCH] SignalTrace: unlink the /dev/shm ring on exit_group

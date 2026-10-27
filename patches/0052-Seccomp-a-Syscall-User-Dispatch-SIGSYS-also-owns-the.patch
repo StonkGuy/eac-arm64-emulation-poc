@@ -1,4 +1,4 @@
-From 41f1c23ca2f1c0f8242a308878238392676c9fe8 Mon Sep 17 00:00:00 2001
+From 90a28293bdc74482347d16b7b7461833f3eac4ae Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Mon, 19 Oct 2026 09:48:36 +0300
 Subject: [PATCH] Seccomp: a Syscall User Dispatch SIGSYS also owns the trap's
