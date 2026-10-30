@@ -106,8 +106,8 @@ Anti-Cheat**; the install has no Easy Anti-Cheat.
 * Graphics: the DXMT path in a VM window. On the Vulkan (DXVK) path one run lost the device about 95 s into the game.
 * Keep Wine logging light: channels such as `+seh` or `+sync` slow the protection's own code past its watchdog, which
   looks like a stall.
-* Steam's idle screensaver took focus from the game a few minutes after launch, about when the menu appears, so menu
-  clicks went to Steam. The steamac fork turns it off (see below).
+* The game takes a few minutes to reach its menu. Left alone that long, Steam's idle screensaver came up over it and
+  took focus, so the next clicks went to Steam. The steamac fork turns it off (see below).
 
 ## Known issues and where they are handled
 
@@ -120,7 +120,7 @@ not in this repository ([fork notes](https://github.com/StonkGuy/steamac/blob/fe
 | microphone start can freeze the guest: steamac's CoreAudio virtio-snd backend starts capture synchronously under a shared lock; over 1 s gives a guest `virtio_snd` control-message time-out, PipeWire is killed and the game freezes. Without macOS microphone permission the capture stream floods the log instead | kernel parameter `virtio_snd.msg_timeout_ms=10000` (workaround) and libkrun patch 0017 (asynchronous capture start); re-verified |
 | launcher present path and input | triple-buffered present, lower default log level, Metal HUD library loaded only when needed, direct-to-display presentation, key releases never dropped, HID off the main thread, Retina EDID DPI, a render-scale control (`--render-scale`, default off), plus the audit's stall/pad-port/`framebufferOnly`/Clipboard fixes — all built and re-verified (adversarial repros pass) |
 | full-frame scanout copy per present | libkrun patch 0018 (copy only the damage owed to each frame); re-verified (0/256 trials stale) |
-| Steam's idle screensaver: Steam does not count mouse and keyboard input routed to a game, so after its idle timeout its screensaver takes focus from the game and clicks go to Steam | guest `steam-idle-screensaver` turns it off once per Steam installation (a screensaver chosen later in Steam's settings stays); verified live with THE FINALS |
+| Steam's idle screensaver: after a few minutes in which Steam sees no input (a long loading screen left alone, or VR, where the headset's input never reaches Steam) it takes focus from the game and the next clicks go to Steam | guest `steam-idle-screensaver` turns it off once per Steam installation (a screensaver chosen later in Steam's settings stays); verified live with THE FINALS |
 
 A code audit of steamac 1.8.2 also confirmed upstream issues this fork does not fix (kept out of the published bundle).
 
