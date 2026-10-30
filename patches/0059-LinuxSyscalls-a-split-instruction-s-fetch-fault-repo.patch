@@ -1,0 +1,56 @@
+From 172680b827a0493f56f4bf552d7d2b8e0028b55b Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 15:32:54 +0200
+Subject: [PATCH] LinuxSyscalls: a split instruction's fetch fault reports the
+ page boundary
+
+An instruction that starts in executable memory and runs into memory that
+is not (the decoder stops part way, "PartialDecode") faults on the fetch
+of its second part: the CPU reports the first byte it could not fetch,
+the end of the executable range, with RIP at the instruction. FEX
+reported RIP as the fault address. Wine passes si_addr on as the access
+violation's address, and anti-tamper code places instructions across a
+guard page to compare it: THE FINALS' anti-cheat executes such an
+instruction (FEX's log: "PartialDecode instruction in entry block").
+
+For a generated instruction fetch fault whose RIP is still executable,
+si_addr is now the end of that executable range; a jump into a
+non-executable page keeps RIP, as before.
+
+eac-tests/insn-straddle (in run-all): MOV r64, imm64 split 1/4/9 bytes
+before a PROT_NONE or PROT_READ page, and a jump into it. Native x86-64
+(oracle): si_addr = boundary, RIP = instruction start. FEX before:
+si_addr = instruction start (6 failures); after: PASS. Not checked: the
+error code's present bit for PROT_NONE (hardware 0, FEX 1), which Wine
+does not pass on.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../SignalDelegator/GuestFramesManagement.cpp         | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
+index 4c91eb2..54326e8 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
+@@ -565,6 +565,17 @@ uint64_t SignalDelegator::SetupFrame_x64(FEXCore::Core::InternalThreadState* Thr
+     // Overwrite si_code and si_addr
+     guest_siginfo->si_code = Thread->CurrentFrame->SynchronousFaultData.si_code;
+     guest_siginfo->si_addr = reinterpret_cast<void*>(ContextBackup->OriginalRIP);
++    // An instruction fetch fault of an instruction that starts in executable memory runs into memory that is not
++    // (the decoder stopped part way): the CPU reports the first byte it could not fetch, where the executable range
++    // ends, with RIP still at the instruction. Wine passes si_addr on as the access violation's address, and
++    // anti-tamper code places instructions across a guard page to compare it.
++    if (Frame->SynchronousFaultData.TrapNo == FEXCore::X86State::X86_TRAPNO_PF &&
++        (Frame->SynchronousFaultData.err_code & FEXCore::X86State::X86_PF_INSTR)) {
++      const auto Range = FEX::HLE::_SyscallHandler->QueryGuestExecutableRange(Thread, ContextBackup->OriginalRIP);
++      if (Range.Size != 0) {
++        guest_siginfo->si_addr = reinterpret_cast<void*>(Range.Base + Range.Size);
++      }
++    }
+     Signal = Frame->SynchronousFaultData.Signal;
+   } else {
+     guest_uctx->uc_mcontext.gregs[FEXCore::x86_64::FEX_REG_TRAPNO] = ConvertSignalToTrapNo(Signal, HostSigInfo);
+-- 
+2.39.5 (Apple Git-154)
+

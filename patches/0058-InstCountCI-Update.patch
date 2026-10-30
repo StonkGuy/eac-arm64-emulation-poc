@@ -1,0 +1,1582 @@
+From 2a88e19d9590bf64bb5cd29cccb3281324854d9f Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 15:27:17 +0200
+Subject: [PATCH] InstCountCI: Update
+
+MOV from FS/GS in 64-bit mode loads the stored selector now; BinaryCacheVersion 0x821E.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ unittests/InstructionCountCI/AFP/H0F3A.json   |  2 +-
+ .../AFP/SVE256/Secondary.json                 |  2 +-
+ .../AFP/SVE256/Secondary_REP.json             |  2 +-
+ .../AFP/SVE256/Secondary_REPNE.json           |  2 +-
+ .../InstructionCountCI/AFP/Secondary.json     |  2 +-
+ .../InstructionCountCI/AFP/Secondary_REP.json |  2 +-
+ .../AFP/Secondary_REPNE.json                  |  2 +-
+ .../InstructionCountCI/AFP/VEX_map1.json      |  2 +-
+ .../InstructionCountCI/AFP/VEX_map3.json      |  2 +-
+ unittests/InstructionCountCI/AVX128/FMA4.json |  2 +-
+ .../InstructionCountCI/AVX128/VEX_map1.json   |  2 +-
+ .../AVX128/VEX_map1_FCMA.json                 |  2 +-
+ .../AVX128/VEX_map1_SVE128.json               |  2 +-
+ .../AVX128/VEX_map1_flagm.json                |  2 +-
+ .../InstructionCountCI/AVX128/VEX_map2.json   |  2 +-
+ .../AVX128/VEX_map2_AFP.json                  |  2 +-
+ .../AVX128/VEX_map2_DOTPROD.json              |  2 +-
+ .../AVX128/VEX_map2_I8MM.json                 |  2 +-
+ .../AVX128/VEX_map2_SVE128.json               |  2 +-
+ .../AVX128/VEX_map2_flagm.json                |  2 +-
+ .../InstructionCountCI/AVX128/VEX_map3.json   |  2 +-
+ .../AVX128/VEX_map3_SVE128.json               |  2 +-
+ .../AVX128/VEX_map_group.json                 |  2 +-
+ unittests/InstructionCountCI/Atomics.json     |  2 +-
+ .../InstructionCountCI/Crypto/H0F38.json      |  2 +-
+ .../Crypto/H0F38_SVE128.json                  |  2 +-
+ .../InstructionCountCI/Crypto/H0F3A.json      |  2 +-
+ unittests/InstructionCountCI/DDD.json         |  2 +-
+ .../FEXOpt/AddressingLimitations.json         |  2 +-
+ .../FEXOpt/AddressingLimitations_32Bit.json   |  2 +-
+ .../InstructionCountCI/FEXOpt/MultiInst.json  |  2 +-
+ .../FEXOpt/MultiInst_32bit.json               |  2 +-
+ .../FEXOpt/MultiInst_AFP.json                 |  2 +-
+ .../FEXOpt/MultiInst_TSO.json                 |  2 +-
+ .../FEXOpt/MultiInst_TSO_32bit.json           |  2 +-
+ .../InstructionCountCI/FEXOpt/Peephole.json   |  2 +-
+ .../FEXOpt/Peephole_SVE128.json               |  2 +-
+ .../InstructionCountCI/FEXOpt/libnss.json     |  2 +-
+ .../InstructionCountCI/FlagM/Atomics.json     |  2 +-
+ .../InstructionCountCI/FlagM/FlagOpts.json    |  2 +-
+ unittests/InstructionCountCI/FlagM/H0F38.json |  2 +-
+ .../InstructionCountCI/FlagM/HotBlocks.json   |  2 +-
+ .../FlagM/HotBlocks_32Bit.json                |  2 +-
+ .../FlagM/HotBlocks_AFP.json                  |  2 +-
+ .../FlagM/HotBlocks_TSO_32Bit.json            |  2 +-
+ .../InstructionCountCI/FlagM/Primary.json     |  2 +-
+ .../FlagM/PrimaryGroup.json                   |  2 +-
+ .../FlagM/Primary_32Bit.json                  |  2 +-
+ .../InstructionCountCI/FlagM/Secondary.json   |  2 +-
+ .../FlagM/SecondaryGroup.json                 |  2 +-
+ .../FlagM/SecondaryModRM.json                 |  2 +-
+ .../FlagM/Secondary_OpSize.json               |  2 +-
+ .../FlagM/Secondary_REP.json                  |  2 +-
+ .../FlagM/Secondary_REP_CSSC.json             |  2 +-
+ .../InstructionCountCI/FlagM/VEX_map1.json    |  2 +-
+ .../InstructionCountCI/FlagM/VEX_map2.json    |  2 +-
+ .../FlagM/VEX_map_group.json                  |  2 +-
+ .../FlagM/x87-Crysis2Max-fmodel.json          |  2 +-
+ .../FlagM/x87-HalfLife.json                   |  2 +-
+ .../FlagM/x87-Oblivion.json                   |  2 +-
+ .../FlagM/x87-Psychonauts.json                |  2 +-
+ unittests/InstructionCountCI/FlagM/x87.json   |  2 +-
+ .../FlagM/x87_f64-Crysis2Max-fmodel.json      |  2 +-
+ .../FlagM/x87_f64-HalfLife.json               |  2 +-
+ .../FlagM/x87_f64-Oblivion.json               |  2 +-
+ .../FlagM/x87_f64-Psychonauts.json            |  2 +-
+ .../InstructionCountCI/FlagM/x87_f64.json     |  2 +-
+ unittests/InstructionCountCI/H0F38.json       |  2 +-
+ unittests/InstructionCountCI/H0F3A.json       |  2 +-
+ .../InstructionCountCI/H0F3A_SVE128.json      |  2 +-
+ .../InstructionCountCI/MOPS/Primary.json      |  2 +-
+ unittests/InstructionCountCI/Primary.json     | 20 ++++++++++---------
+ .../InstructionCountCI/PrimaryGroup.json      |  2 +-
+ .../InstructionCountCI/Primary_32Bit.json     |  2 +-
+ unittests/InstructionCountCI/RPRES/DDD.json   |  2 +-
+ .../InstructionCountCI/RPRES/Secondary.json   |  2 +-
+ .../RPRES/Secondary_REP_AFP.json              |  2 +-
+ .../RPRES/VEX_map1_AFP.json                   |  2 +-
+ unittests/InstructionCountCI/Repeat.json      |  2 +-
+ .../InstructionCountCI/SSE42_Strings.json     |  2 +-
+ unittests/InstructionCountCI/Secondary.json   |  2 +-
+ .../InstructionCountCI/SecondaryGroup.json    |  2 +-
+ .../InstructionCountCI/SecondaryModRM.json    |  2 +-
+ .../InstructionCountCI/Secondary_32Bit.json   |  2 +-
+ .../InstructionCountCI/Secondary_OpSize.json  |  2 +-
+ .../Secondary_OpSize_FCMA.json                |  2 +-
+ .../Secondary_OpSize_SVE128.json              |  2 +-
+ .../Secondary_OpSize_SVE256.json              |  2 +-
+ .../InstructionCountCI/Secondary_REP.json     |  2 +-
+ .../InstructionCountCI/Secondary_REPNE.json   |  2 +-
+ .../Secondary_REPNE_FCMA.json                 |  2 +-
+ .../Secondary_REPNE_SVE128.json               |  2 +-
+ .../Secondary_REP_FRINTTS.json                |  2 +-
+ .../InstructionCountCI/Secondary_SVE128.json  |  2 +-
+ unittests/InstructionCountCI/VEX_map1.json    |  2 +-
+ .../InstructionCountCI/VEX_map1_FCMA.json     |  2 +-
+ .../InstructionCountCI/VEX_map1_FRINTTS.json  |  2 +-
+ unittests/InstructionCountCI/VEX_map2.json    |  2 +-
+ .../InstructionCountCI/VEX_map2_DOTPROD.json  |  2 +-
+ .../InstructionCountCI/VEX_map2_I8MM.json     |  2 +-
+ .../VEX_map2_svebitperm.json                  |  2 +-
+ unittests/InstructionCountCI/VEX_map3.json    |  2 +-
+ .../InstructionCountCI/VEX_map_group.json     |  2 +-
+ unittests/InstructionCountCI/X87ldst-SVE.json |  2 +-
+ unittests/InstructionCountCI/x87.json         |  2 +-
+ unittests/InstructionCountCI/x87_32Bit.json   |  2 +-
+ unittests/InstructionCountCI/x87_f64.json     |  2 +-
+ .../InstructionCountCI/x87_f64_32Bit.json     |  2 +-
+ 108 files changed, 118 insertions(+), 116 deletions(-)
+
+diff --git a/unittests/InstructionCountCI/AFP/H0F3A.json b/unittests/InstructionCountCI/AFP/H0F3A.json
+index c04af28..bb4cc9f 100644
+--- a/unittests/InstructionCountCI/AFP/H0F3A.json
++++ b/unittests/InstructionCountCI/AFP/H0F3A.json
+@@ -8,7 +8,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "roundss xmm0, xmm1, 00000000b": {
+diff --git a/unittests/InstructionCountCI/AFP/SVE256/Secondary.json b/unittests/InstructionCountCI/AFP/SVE256/Secondary.json
+index 232d460..f84b2a8 100644
+--- a/unittests/InstructionCountCI/AFP/SVE256/Secondary.json
++++ b/unittests/InstructionCountCI/AFP/SVE256/Secondary.json
+@@ -7,7 +7,7 @@
+       "AFP"
+     ],
+     "DisabledHostFeatures": [],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "cvtpi2ps xmm0, [rax]": {
+diff --git a/unittests/InstructionCountCI/AFP/SVE256/Secondary_REP.json b/unittests/InstructionCountCI/AFP/SVE256/Secondary_REP.json
+index 1381afe..d3ef1f2 100644
+--- a/unittests/InstructionCountCI/AFP/SVE256/Secondary_REP.json
++++ b/unittests/InstructionCountCI/AFP/SVE256/Secondary_REP.json
+@@ -9,7 +9,7 @@
+     "DisabledHostFeatures": [
+       "RPRES"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "cvtsi2ss xmm0, eax": {
+diff --git a/unittests/InstructionCountCI/AFP/SVE256/Secondary_REPNE.json b/unittests/InstructionCountCI/AFP/SVE256/Secondary_REPNE.json
+index 0e91208..95403c0 100644
+--- a/unittests/InstructionCountCI/AFP/SVE256/Secondary_REPNE.json
++++ b/unittests/InstructionCountCI/AFP/SVE256/Secondary_REPNE.json
+@@ -7,7 +7,7 @@
+       "AFP"
+     ],
+     "DisabledHostFeatures": [],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "cvtsi2sd xmm0, eax": {
+diff --git a/unittests/InstructionCountCI/AFP/Secondary.json b/unittests/InstructionCountCI/AFP/Secondary.json
+index 91d649d..cf3c0ef 100644
+--- a/unittests/InstructionCountCI/AFP/Secondary.json
++++ b/unittests/InstructionCountCI/AFP/Secondary.json
+@@ -8,7 +8,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "cvtpi2ps xmm0, [rax]": {
+diff --git a/unittests/InstructionCountCI/AFP/Secondary_REP.json b/unittests/InstructionCountCI/AFP/Secondary_REP.json
+index 89f5a8f..936cbd4 100644
+--- a/unittests/InstructionCountCI/AFP/Secondary_REP.json
++++ b/unittests/InstructionCountCI/AFP/Secondary_REP.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "RPRES"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "cvtsi2ss xmm0, eax": {
+diff --git a/unittests/InstructionCountCI/AFP/Secondary_REPNE.json b/unittests/InstructionCountCI/AFP/Secondary_REPNE.json
+index 7c15c77..d86783b 100644
+--- a/unittests/InstructionCountCI/AFP/Secondary_REPNE.json
++++ b/unittests/InstructionCountCI/AFP/Secondary_REPNE.json
+@@ -8,7 +8,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "cvtsi2sd xmm0, eax": {
+diff --git a/unittests/InstructionCountCI/AFP/VEX_map1.json b/unittests/InstructionCountCI/AFP/VEX_map1.json
+index db09146..777d626 100644
+--- a/unittests/InstructionCountCI/AFP/VEX_map1.json
++++ b/unittests/InstructionCountCI/AFP/VEX_map1.json
+@@ -9,7 +9,7 @@
+     "DisabledHostFeatures": [
+       "RPRES"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vsqrtss xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/AFP/VEX_map3.json b/unittests/InstructionCountCI/AFP/VEX_map3.json
+index 8249437..4c562de 100644
+--- a/unittests/InstructionCountCI/AFP/VEX_map3.json
++++ b/unittests/InstructionCountCI/AFP/VEX_map3.json
+@@ -7,7 +7,7 @@
+       "AFP"
+     ],
+     "DisabledHostFeatures": [],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vroundss xmm0, xmm1, 00000000b": {
+diff --git a/unittests/InstructionCountCI/AVX128/FMA4.json b/unittests/InstructionCountCI/AVX128/FMA4.json
+index 3273ccf..9563666 100644
+--- a/unittests/InstructionCountCI/AVX128/FMA4.json
++++ b/unittests/InstructionCountCI/AVX128/FMA4.json
+@@ -7,7 +7,7 @@
+       "SVE256",
+       "SVE128"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vfmaddsubps xmm0, xmm1, xmm2, xmm3": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map1.json b/unittests/InstructionCountCI/AVX128/VEX_map1.json
+index c9f95f2..5ed755a 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map1.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map1.json
+@@ -13,7 +13,7 @@
+       "SVE256",
+       "SVE128"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vmovups xmm0, xmm0": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map1_FCMA.json b/unittests/InstructionCountCI/AVX128/VEX_map1_FCMA.json
+index 87e4640..8b16c69 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map1_FCMA.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map1_FCMA.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "SVE128"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vaddsubpd xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map1_SVE128.json b/unittests/InstructionCountCI/AVX128/VEX_map1_SVE128.json
+index 493566b..46a4eeb 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map1_SVE128.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map1_SVE128.json
+@@ -10,7 +10,7 @@
+       "FLAGM2",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vmovntps [rax], xmm0": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map1_flagm.json b/unittests/InstructionCountCI/AVX128/VEX_map1_flagm.json
+index 9c7dc05..8902c9b 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map1_flagm.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map1_flagm.json
+@@ -10,7 +10,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vucomiss xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map2.json b/unittests/InstructionCountCI/AVX128/VEX_map2.json
+index 1aae122..a1ee478 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map2.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map2.json
+@@ -11,7 +11,7 @@
+       "I8MM",
+       "DOTPROD"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpshufb xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map2_AFP.json b/unittests/InstructionCountCI/AVX128/VEX_map2_AFP.json
+index a9ac57d..7d66c3d 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map2_AFP.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map2_AFP.json
+@@ -8,7 +8,7 @@
+       "SVE256",
+       "SVE128"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vfmadd132ss xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map2_DOTPROD.json b/unittests/InstructionCountCI/AVX128/VEX_map2_DOTPROD.json
+index 8cd6b32..d3b8bae 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map2_DOTPROD.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map2_DOTPROD.json
+@@ -12,7 +12,7 @@
+       "SVE256",
+       "I8MM"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpdpbusd xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map2_I8MM.json b/unittests/InstructionCountCI/AVX128/VEX_map2_I8MM.json
+index ebe9ac1..1e4921d 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map2_I8MM.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map2_I8MM.json
+@@ -11,7 +11,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpdpbusd xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map2_SVE128.json b/unittests/InstructionCountCI/AVX128/VEX_map2_SVE128.json
+index e03c12b..4d562d6 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map2_SVE128.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map2_SVE128.json
+@@ -10,7 +10,7 @@
+       "FLAGM2",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vmovntdqa xmm0, [rax]": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map2_flagm.json b/unittests/InstructionCountCI/AVX128/VEX_map2_flagm.json
+index c4ba6e2..97a405f 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map2_flagm.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map2_flagm.json
+@@ -11,7 +11,7 @@
+       "SVE256",
+       "SVEBITPERM"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vtestps xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map3.json b/unittests/InstructionCountCI/AVX128/VEX_map3.json
+index 263f828..94fd679 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map3.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map3.json
+@@ -7,7 +7,7 @@
+       "SVE256",
+       "SVE128"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpermq ymm0, ymm1, 1": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map3_SVE128.json b/unittests/InstructionCountCI/AVX128/VEX_map3_SVE128.json
+index a9904f9..51585c9 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map3_SVE128.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map3_SVE128.json
+@@ -8,7 +8,7 @@
+       "AFP",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vblendvps xmm0, xmm1, xmm2, xmm3": {
+diff --git a/unittests/InstructionCountCI/AVX128/VEX_map_group.json b/unittests/InstructionCountCI/AVX128/VEX_map_group.json
+index 531efa5..9dcb4ff 100644
+--- a/unittests/InstructionCountCI/AVX128/VEX_map_group.json
++++ b/unittests/InstructionCountCI/AVX128/VEX_map_group.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "SVE128"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpsrlw xmm0, xmm1, 0": {
+diff --git a/unittests/InstructionCountCI/Atomics.json b/unittests/InstructionCountCI/Atomics.json
+index 79a2e7e..8d341ab 100644
+--- a/unittests/InstructionCountCI/Atomics.json
++++ b/unittests/InstructionCountCI/Atomics.json
+@@ -9,7 +9,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "lock add byte [rax], cl": {
+diff --git a/unittests/InstructionCountCI/Crypto/H0F38.json b/unittests/InstructionCountCI/Crypto/H0F38.json
+index a3b9662..78a6ff4 100644
+--- a/unittests/InstructionCountCI/Crypto/H0F38.json
++++ b/unittests/InstructionCountCI/Crypto/H0F38.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "sha1nexte xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Crypto/H0F38_SVE128.json b/unittests/InstructionCountCI/Crypto/H0F38_SVE128.json
+index ac87efb..536eff3 100644
+--- a/unittests/InstructionCountCI/Crypto/H0F38_SVE128.json
++++ b/unittests/InstructionCountCI/Crypto/H0F38_SVE128.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "sha1nexte xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Crypto/H0F3A.json b/unittests/InstructionCountCI/Crypto/H0F3A.json
+index 4dc60e6..9b1dad5 100644
+--- a/unittests/InstructionCountCI/Crypto/H0F3A.json
++++ b/unittests/InstructionCountCI/Crypto/H0F3A.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "pclmulqdq xmm0, xmm1, 00000b": {
+diff --git a/unittests/InstructionCountCI/DDD.json b/unittests/InstructionCountCI/DDD.json
+index d1cf3d5..5614bd9 100644
+--- a/unittests/InstructionCountCI/DDD.json
++++ b/unittests/InstructionCountCI/DDD.json
+@@ -10,7 +10,7 @@
+       "AFP",
+       "RPRES"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "These 3DNow! instructions are optimal assuming that FEX doesn't SRA MMX registers",
+diff --git a/unittests/InstructionCountCI/FEXOpt/AddressingLimitations.json b/unittests/InstructionCountCI/FEXOpt/AddressingLimitations.json
+index 564a152..9cbb578 100644
+--- a/unittests/InstructionCountCI/FEXOpt/AddressingLimitations.json
++++ b/unittests/InstructionCountCI/FEXOpt/AddressingLimitations.json
+@@ -8,7 +8,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "Instructions that explicitly push against the limits of ARM's loadstore instructions"
+diff --git a/unittests/InstructionCountCI/FEXOpt/AddressingLimitations_32Bit.json b/unittests/InstructionCountCI/FEXOpt/AddressingLimitations_32Bit.json
+index 7dabb7f..236b66f 100644
+--- a/unittests/InstructionCountCI/FEXOpt/AddressingLimitations_32Bit.json
++++ b/unittests/InstructionCountCI/FEXOpt/AddressingLimitations_32Bit.json
+@@ -8,7 +8,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "Instructions that explicitly push against the limits of ARM's loadstore instructions"
+diff --git a/unittests/InstructionCountCI/FEXOpt/MultiInst.json b/unittests/InstructionCountCI/FEXOpt/MultiInst.json
+index d1c9a28..beb1df6 100644
+--- a/unittests/InstructionCountCI/FEXOpt/MultiInst.json
++++ b/unittests/InstructionCountCI/FEXOpt/MultiInst.json
+@@ -13,7 +13,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "These are instruction combinations that could be more optimal if FEX optimized for them"
+diff --git a/unittests/InstructionCountCI/FEXOpt/MultiInst_32bit.json b/unittests/InstructionCountCI/FEXOpt/MultiInst_32bit.json
+index 84f7298..b3669c4 100644
+--- a/unittests/InstructionCountCI/FEXOpt/MultiInst_32bit.json
++++ b/unittests/InstructionCountCI/FEXOpt/MultiInst_32bit.json
+@@ -11,7 +11,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "These are instruction combinations that could be more optimal if FEX optimized for them"
+diff --git a/unittests/InstructionCountCI/FEXOpt/MultiInst_AFP.json b/unittests/InstructionCountCI/FEXOpt/MultiInst_AFP.json
+index 83f426b..122dae9 100644
+--- a/unittests/InstructionCountCI/FEXOpt/MultiInst_AFP.json
++++ b/unittests/InstructionCountCI/FEXOpt/MultiInst_AFP.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "RPRES"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "These are instruction combinations that could be more optimal if FEX optimized for them"
+diff --git a/unittests/InstructionCountCI/FEXOpt/MultiInst_TSO.json b/unittests/InstructionCountCI/FEXOpt/MultiInst_TSO.json
+index f7676ee..4bc2468 100644
+--- a/unittests/InstructionCountCI/FEXOpt/MultiInst_TSO.json
++++ b/unittests/InstructionCountCI/FEXOpt/MultiInst_TSO.json
+@@ -14,7 +14,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "These are instruction combinations that could be more optimal if FEX optimized for them"
+diff --git a/unittests/InstructionCountCI/FEXOpt/MultiInst_TSO_32bit.json b/unittests/InstructionCountCI/FEXOpt/MultiInst_TSO_32bit.json
+index 18f4089..81fb53c 100644
+--- a/unittests/InstructionCountCI/FEXOpt/MultiInst_TSO_32bit.json
++++ b/unittests/InstructionCountCI/FEXOpt/MultiInst_TSO_32bit.json
+@@ -14,7 +14,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "These are instruction combinations that could be more optimal if FEX optimized for them"
+diff --git a/unittests/InstructionCountCI/FEXOpt/Peephole.json b/unittests/InstructionCountCI/FEXOpt/Peephole.json
+index a69e81c..d9ce951 100644
+--- a/unittests/InstructionCountCI/FEXOpt/Peephole.json
++++ b/unittests/InstructionCountCI/FEXOpt/Peephole.json
+@@ -11,7 +11,7 @@
+       "I8MM",
+       "DOTPROD"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "This file tracks the translations for the 'peephole' optimizations in FEX.",
+diff --git a/unittests/InstructionCountCI/FEXOpt/Peephole_SVE128.json b/unittests/InstructionCountCI/FEXOpt/Peephole_SVE128.json
+index a09b9f1..90df300 100644
+--- a/unittests/InstructionCountCI/FEXOpt/Peephole_SVE128.json
++++ b/unittests/InstructionCountCI/FEXOpt/Peephole_SVE128.json
+@@ -10,7 +10,7 @@
+       "FLAGM2",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "This file tracks the translations for the 'peephole' optimizations in FEX.",
+diff --git a/unittests/InstructionCountCI/FEXOpt/libnss.json b/unittests/InstructionCountCI/FEXOpt/libnss.json
+index e730871..8ae8b75 100644
+--- a/unittests/InstructionCountCI/FEXOpt/libnss.json
++++ b/unittests/InstructionCountCI/FEXOpt/libnss.json
+@@ -12,7 +12,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [],
+   "Instructions": {
+diff --git a/unittests/InstructionCountCI/FlagM/Atomics.json b/unittests/InstructionCountCI/FlagM/Atomics.json
+index 4bd3013..cf88020 100644
+--- a/unittests/InstructionCountCI/FlagM/Atomics.json
++++ b/unittests/InstructionCountCI/FlagM/Atomics.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "lock add byte [rax], cl": {
+diff --git a/unittests/InstructionCountCI/FlagM/FlagOpts.json b/unittests/InstructionCountCI/FlagM/FlagOpts.json
+index 2556dbb..1f1df15 100644
+--- a/unittests/InstructionCountCI/FlagM/FlagOpts.json
++++ b/unittests/InstructionCountCI/FlagM/FlagOpts.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Chained add": {
+diff --git a/unittests/InstructionCountCI/FlagM/H0F38.json b/unittests/InstructionCountCI/FlagM/H0F38.json
+index ba3caf1..cf1d6d6 100644
+--- a/unittests/InstructionCountCI/FlagM/H0F38.json
++++ b/unittests/InstructionCountCI/FlagM/H0F38.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "ptest xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/FlagM/HotBlocks.json b/unittests/InstructionCountCI/FlagM/HotBlocks.json
+index 3f52737..67bcf66 100644
+--- a/unittests/InstructionCountCI/FlagM/HotBlocks.json
++++ b/unittests/InstructionCountCI/FlagM/HotBlocks.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "The Witcher 3": {
+diff --git a/unittests/InstructionCountCI/FlagM/HotBlocks_32Bit.json b/unittests/InstructionCountCI/FlagM/HotBlocks_32Bit.json
+index 1849af3..c7ff7ba 100644
+--- a/unittests/InstructionCountCI/FlagM/HotBlocks_32Bit.json
++++ b/unittests/InstructionCountCI/FlagM/HotBlocks_32Bit.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Sonic Mania movie player": {
+diff --git a/unittests/InstructionCountCI/FlagM/HotBlocks_AFP.json b/unittests/InstructionCountCI/FlagM/HotBlocks_AFP.json
+index d88b8a2..49ce950 100644
+--- a/unittests/InstructionCountCI/FlagM/HotBlocks_AFP.json
++++ b/unittests/InstructionCountCI/FlagM/HotBlocks_AFP.json
+@@ -10,7 +10,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "FMOD scalar loop": {
+diff --git a/unittests/InstructionCountCI/FlagM/HotBlocks_TSO_32Bit.json b/unittests/InstructionCountCI/FlagM/HotBlocks_TSO_32Bit.json
+index 51ee301..f6e11a0 100644
+--- a/unittests/InstructionCountCI/FlagM/HotBlocks_TSO_32Bit.json
++++ b/unittests/InstructionCountCI/FlagM/HotBlocks_TSO_32Bit.json
+@@ -13,7 +13,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "The Sims 1 hot block": {
+diff --git a/unittests/InstructionCountCI/FlagM/Primary.json b/unittests/InstructionCountCI/FlagM/Primary.json
+index 58639f7..729f4b0 100644
+--- a/unittests/InstructionCountCI/FlagM/Primary.json
++++ b/unittests/InstructionCountCI/FlagM/Primary.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "add bl, cl": {
+diff --git a/unittests/InstructionCountCI/FlagM/PrimaryGroup.json b/unittests/InstructionCountCI/FlagM/PrimaryGroup.json
+index 50fd0e7..1ecb7b4 100644
+--- a/unittests/InstructionCountCI/FlagM/PrimaryGroup.json
++++ b/unittests/InstructionCountCI/FlagM/PrimaryGroup.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "add al, 1": {
+diff --git a/unittests/InstructionCountCI/FlagM/Primary_32Bit.json b/unittests/InstructionCountCI/FlagM/Primary_32Bit.json
+index 8c4bcc8..72c38f2 100644
+--- a/unittests/InstructionCountCI/FlagM/Primary_32Bit.json
++++ b/unittests/InstructionCountCI/FlagM/Primary_32Bit.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "push es": {
+diff --git a/unittests/InstructionCountCI/FlagM/Secondary.json b/unittests/InstructionCountCI/FlagM/Secondary.json
+index bc6265f..69bbbf5 100644
+--- a/unittests/InstructionCountCI/FlagM/Secondary.json
++++ b/unittests/InstructionCountCI/FlagM/Secondary.json
+@@ -11,7 +11,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "ucomiss xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/FlagM/SecondaryGroup.json b/unittests/InstructionCountCI/FlagM/SecondaryGroup.json
+index a1e9b34..521cb5a 100644
+--- a/unittests/InstructionCountCI/FlagM/SecondaryGroup.json
++++ b/unittests/InstructionCountCI/FlagM/SecondaryGroup.json
+@@ -11,7 +11,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "sgdt [rax]": {
+diff --git a/unittests/InstructionCountCI/FlagM/SecondaryModRM.json b/unittests/InstructionCountCI/FlagM/SecondaryModRM.json
+index 5e8ff13..d8faa4b 100644
+--- a/unittests/InstructionCountCI/FlagM/SecondaryModRM.json
++++ b/unittests/InstructionCountCI/FlagM/SecondaryModRM.json
+@@ -11,7 +11,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "xgetbv": {
+diff --git a/unittests/InstructionCountCI/FlagM/Secondary_OpSize.json b/unittests/InstructionCountCI/FlagM/Secondary_OpSize.json
+index e9d6806..b0e5ff2 100644
+--- a/unittests/InstructionCountCI/FlagM/Secondary_OpSize.json
++++ b/unittests/InstructionCountCI/FlagM/Secondary_OpSize.json
+@@ -11,7 +11,7 @@
+       "AFP",
+       "FCMA"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "ucomisd xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/FlagM/Secondary_REP.json b/unittests/InstructionCountCI/FlagM/Secondary_REP.json
+index c50bbf9..d1c0229 100644
+--- a/unittests/InstructionCountCI/FlagM/Secondary_REP.json
++++ b/unittests/InstructionCountCI/FlagM/Secondary_REP.json
+@@ -12,7 +12,7 @@
+       "AFP",
+       "CSSC"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "popcnt ax, bx": {
+diff --git a/unittests/InstructionCountCI/FlagM/Secondary_REP_CSSC.json b/unittests/InstructionCountCI/FlagM/Secondary_REP_CSSC.json
+index 35a5b42..d189316 100644
+--- a/unittests/InstructionCountCI/FlagM/Secondary_REP_CSSC.json
++++ b/unittests/InstructionCountCI/FlagM/Secondary_REP_CSSC.json
+@@ -12,7 +12,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "popcnt ax, bx": {
+diff --git a/unittests/InstructionCountCI/FlagM/VEX_map1.json b/unittests/InstructionCountCI/FlagM/VEX_map1.json
+index 023956b..49b9771 100644
+--- a/unittests/InstructionCountCI/FlagM/VEX_map1.json
++++ b/unittests/InstructionCountCI/FlagM/VEX_map1.json
+@@ -12,7 +12,7 @@
+       "RPRES",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vucomiss xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/FlagM/VEX_map2.json b/unittests/InstructionCountCI/FlagM/VEX_map2.json
+index 68679ce..ca1311c 100644
+--- a/unittests/InstructionCountCI/FlagM/VEX_map2.json
++++ b/unittests/InstructionCountCI/FlagM/VEX_map2.json
+@@ -10,7 +10,7 @@
+       "AFP",
+       "SVEBITPERM"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vtestps xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/FlagM/VEX_map_group.json b/unittests/InstructionCountCI/FlagM/VEX_map_group.json
+index eb2c776..eb1fef9 100644
+--- a/unittests/InstructionCountCI/FlagM/VEX_map_group.json
++++ b/unittests/InstructionCountCI/FlagM/VEX_map_group.json
+@@ -9,7 +9,7 @@
+     "DisabledHostFeatures": [
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "blsr eax, ebx": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87-Crysis2Max-fmodel.json b/unittests/InstructionCountCI/FlagM/x87-Crysis2Max-fmodel.json
+index dc06f0d..bcda523 100644
+--- a/unittests/InstructionCountCI/FlagM/x87-Crysis2Max-fmodel.json
++++ b/unittests/InstructionCountCI/FlagM/x87-Crysis2Max-fmodel.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Block1": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87-HalfLife.json b/unittests/InstructionCountCI/FlagM/x87-HalfLife.json
+index 9e22f22..3aa3012 100644
+--- a/unittests/InstructionCountCI/FlagM/x87-HalfLife.json
++++ b/unittests/InstructionCountCI/FlagM/x87-HalfLife.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Block1": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87-Oblivion.json b/unittests/InstructionCountCI/FlagM/x87-Oblivion.json
+index 46a77fa..d62d0fb 100644
+--- a/unittests/InstructionCountCI/FlagM/x87-Oblivion.json
++++ b/unittests/InstructionCountCI/FlagM/x87-Oblivion.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Block1": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87-Psychonauts.json b/unittests/InstructionCountCI/FlagM/x87-Psychonauts.json
+index 963d63d..b05855c 100644
+--- a/unittests/InstructionCountCI/FlagM/x87-Psychonauts.json
++++ b/unittests/InstructionCountCI/FlagM/x87-Psychonauts.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Block1": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87.json b/unittests/InstructionCountCI/FlagM/x87.json
+index c6977c5..9f719f3 100644
+--- a/unittests/InstructionCountCI/FlagM/x87.json
++++ b/unittests/InstructionCountCI/FlagM/x87.json
+@@ -11,7 +11,7 @@
+       "CSSC",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "fadd dword [rax]": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87_f64-Crysis2Max-fmodel.json b/unittests/InstructionCountCI/FlagM/x87_f64-Crysis2Max-fmodel.json
+index 963fabf..3d9cf4f 100644
+--- a/unittests/InstructionCountCI/FlagM/x87_f64-Crysis2Max-fmodel.json
++++ b/unittests/InstructionCountCI/FlagM/x87_f64-Crysis2Max-fmodel.json
+@@ -13,7 +13,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Block1": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87_f64-HalfLife.json b/unittests/InstructionCountCI/FlagM/x87_f64-HalfLife.json
+index ca19784..be365da 100644
+--- a/unittests/InstructionCountCI/FlagM/x87_f64-HalfLife.json
++++ b/unittests/InstructionCountCI/FlagM/x87_f64-HalfLife.json
+@@ -13,7 +13,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Block1": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87_f64-Oblivion.json b/unittests/InstructionCountCI/FlagM/x87_f64-Oblivion.json
+index 16c22ce..cd6be6e 100644
+--- a/unittests/InstructionCountCI/FlagM/x87_f64-Oblivion.json
++++ b/unittests/InstructionCountCI/FlagM/x87_f64-Oblivion.json
+@@ -13,7 +13,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Block1": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87_f64-Psychonauts.json b/unittests/InstructionCountCI/FlagM/x87_f64-Psychonauts.json
+index 29d30f5..6256ae5 100644
+--- a/unittests/InstructionCountCI/FlagM/x87_f64-Psychonauts.json
++++ b/unittests/InstructionCountCI/FlagM/x87_f64-Psychonauts.json
+@@ -13,7 +13,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Block1": {
+diff --git a/unittests/InstructionCountCI/FlagM/x87_f64.json b/unittests/InstructionCountCI/FlagM/x87_f64.json
+index 3b79097..441f791 100644
+--- a/unittests/InstructionCountCI/FlagM/x87_f64.json
++++ b/unittests/InstructionCountCI/FlagM/x87_f64.json
+@@ -13,7 +13,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "fadd dword [rax]": {
+diff --git a/unittests/InstructionCountCI/H0F38.json b/unittests/InstructionCountCI/H0F38.json
+index 8951044..49ab087 100644
+--- a/unittests/InstructionCountCI/H0F38.json
++++ b/unittests/InstructionCountCI/H0F38.json
+@@ -10,7 +10,7 @@
+       "FLAGM2",
+       "CRYPTO"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "pshufb mm0, mm1": {
+diff --git a/unittests/InstructionCountCI/H0F3A.json b/unittests/InstructionCountCI/H0F3A.json
+index e477da8..a1ce052 100644
+--- a/unittests/InstructionCountCI/H0F3A.json
++++ b/unittests/InstructionCountCI/H0F3A.json
+@@ -8,7 +8,7 @@
+       "AFP",
+       "CRYPTO"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "SSE4.2 string instructions are skipped here.",
+diff --git a/unittests/InstructionCountCI/H0F3A_SVE128.json b/unittests/InstructionCountCI/H0F3A_SVE128.json
+index 9366ff4..9fcd9bc 100644
+--- a/unittests/InstructionCountCI/H0F3A_SVE128.json
++++ b/unittests/InstructionCountCI/H0F3A_SVE128.json
+@@ -8,7 +8,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "dpps xmm0, xmm1, 00000000b": {
+diff --git a/unittests/InstructionCountCI/MOPS/Primary.json b/unittests/InstructionCountCI/MOPS/Primary.json
+index 11b3556..c6e93d6 100644
+--- a/unittests/InstructionCountCI/MOPS/Primary.json
++++ b/unittests/InstructionCountCI/MOPS/Primary.json
+@@ -11,7 +11,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "rep movsb": {
+diff --git a/unittests/InstructionCountCI/Primary.json b/unittests/InstructionCountCI/Primary.json
+index f2e8a49..22a0194 100644
+--- a/unittests/InstructionCountCI/Primary.json
++++ b/unittests/InstructionCountCI/Primary.json
+@@ -10,7 +10,7 @@
+       "FLAGM2",
+       "MOPS"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "add bl, cl": {
+@@ -2229,45 +2229,47 @@
+       ]
+     },
+     "mov ax, gs": {
+-      "ExpectedInstructionCount": 1,
++      "ExpectedInstructionCount": 2,
+       "Comment": "0x8c",
+       "ExpectedArm64ASM": [
+-        "and x4, x4, #0xffffffffffff0000"
++        "ldrh w20, [x28, #968]",
++        "bfxil x4, x20, #0, #16"
+       ]
+     },
+     "mov eax, gs": {
+       "ExpectedInstructionCount": 1,
+       "Comment": "0x8c",
+       "ExpectedArm64ASM": [
+-        "mov w4, #0x0"
++        "ldrh w4, [x28, #968]"
+       ]
+     },
+     "mov rax, gs": {
+       "ExpectedInstructionCount": 1,
+       "Comment": "0x8c",
+       "ExpectedArm64ASM": [
+-        "mov w4, #0x0"
++        "ldrh w4, [x28, #968]"
+       ]
+     },
+     "mov ax, fs": {
+-      "ExpectedInstructionCount": 1,
++      "ExpectedInstructionCount": 2,
+       "Comment": "0x8c",
+       "ExpectedArm64ASM": [
+-        "and x4, x4, #0xffffffffffff0000"
++        "ldrh w20, [x28, #970]",
++        "bfxil x4, x20, #0, #16"
+       ]
+     },
+     "mov eax, fs": {
+       "ExpectedInstructionCount": 1,
+       "Comment": "0x8c",
+       "ExpectedArm64ASM": [
+-        "mov w4, #0x0"
++        "ldrh w4, [x28, #970]"
+       ]
+     },
+     "mov rax, fs": {
+       "ExpectedInstructionCount": 1,
+       "Comment": "0x8c",
+       "ExpectedArm64ASM": [
+-        "mov w4, #0x0"
++        "ldrh w4, [x28, #970]"
+       ]
+     },
+     "lea ax, [rbx+rcx*1 + 0]": {
+diff --git a/unittests/InstructionCountCI/PrimaryGroup.json b/unittests/InstructionCountCI/PrimaryGroup.json
+index 46f82b6..38d2e1e 100644
+--- a/unittests/InstructionCountCI/PrimaryGroup.json
++++ b/unittests/InstructionCountCI/PrimaryGroup.json
+@@ -9,7 +9,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "Instructions in this table that are marked optimal don't have their flag calculation part of this assumption",
+diff --git a/unittests/InstructionCountCI/Primary_32Bit.json b/unittests/InstructionCountCI/Primary_32Bit.json
+index 17958f0..035c358 100644
+--- a/unittests/InstructionCountCI/Primary_32Bit.json
++++ b/unittests/InstructionCountCI/Primary_32Bit.json
+@@ -9,7 +9,7 @@
+       "FlagM",
+       "FlagM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "push es": {
+diff --git a/unittests/InstructionCountCI/RPRES/DDD.json b/unittests/InstructionCountCI/RPRES/DDD.json
+index 4359230..f3813a3 100644
+--- a/unittests/InstructionCountCI/RPRES/DDD.json
++++ b/unittests/InstructionCountCI/RPRES/DDD.json
+@@ -9,7 +9,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "pfrcpv mm0, mm1": {
+diff --git a/unittests/InstructionCountCI/RPRES/Secondary.json b/unittests/InstructionCountCI/RPRES/Secondary.json
+index c1e38f2..ebf62ab 100644
+--- a/unittests/InstructionCountCI/RPRES/Secondary.json
++++ b/unittests/InstructionCountCI/RPRES/Secondary.json
+@@ -9,7 +9,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "rsqrtps xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/RPRES/Secondary_REP_AFP.json b/unittests/InstructionCountCI/RPRES/Secondary_REP_AFP.json
+index a1ef846..09fba12 100644
+--- a/unittests/InstructionCountCI/RPRES/Secondary_REP_AFP.json
++++ b/unittests/InstructionCountCI/RPRES/Secondary_REP_AFP.json
+@@ -9,7 +9,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "rsqrtss xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/RPRES/VEX_map1_AFP.json b/unittests/InstructionCountCI/RPRES/VEX_map1_AFP.json
+index d65b235..5f584c1 100644
+--- a/unittests/InstructionCountCI/RPRES/VEX_map1_AFP.json
++++ b/unittests/InstructionCountCI/RPRES/VEX_map1_AFP.json
+@@ -8,7 +8,7 @@
+       "AFP"
+     ],
+     "DisabledHostFeatures": [],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vrsqrtps xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Repeat.json b/unittests/InstructionCountCI/Repeat.json
+index 87e4375..07478e7 100644
+--- a/unittests/InstructionCountCI/Repeat.json
++++ b/unittests/InstructionCountCI/Repeat.json
+@@ -6,7 +6,7 @@
+       "SVE128",
+       "SVE256"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {}
+ }
+diff --git a/unittests/InstructionCountCI/SSE42_Strings.json b/unittests/InstructionCountCI/SSE42_Strings.json
+index 0dece34..b687fce 100644
+--- a/unittests/InstructionCountCI/SSE42_Strings.json
++++ b/unittests/InstructionCountCI/SSE42_Strings.json
+@@ -33,7 +33,7 @@
+       "      - 1b: ECX = MSB",
+       "[7]   - Reserved"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "pcmpestrm xmm0, xmm1, 0_0_00_00_00b": {
+diff --git a/unittests/InstructionCountCI/Secondary.json b/unittests/InstructionCountCI/Secondary.json
+index 5face6c..081bd39 100644
+--- a/unittests/InstructionCountCI/Secondary.json
++++ b/unittests/InstructionCountCI/Secondary.json
+@@ -12,7 +12,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Comment": [
+     "MMX instructions are defined as optimal without SRA being used for these instructions.",
+diff --git a/unittests/InstructionCountCI/SecondaryGroup.json b/unittests/InstructionCountCI/SecondaryGroup.json
+index 1e4f661..827088e 100644
+--- a/unittests/InstructionCountCI/SecondaryGroup.json
++++ b/unittests/InstructionCountCI/SecondaryGroup.json
+@@ -11,7 +11,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "sgdt [rax]": {
+diff --git a/unittests/InstructionCountCI/SecondaryModRM.json b/unittests/InstructionCountCI/SecondaryModRM.json
+index 2c893bb..7d4cd49 100644
+--- a/unittests/InstructionCountCI/SecondaryModRM.json
++++ b/unittests/InstructionCountCI/SecondaryModRM.json
+@@ -11,7 +11,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "xgetbv": {
+diff --git a/unittests/InstructionCountCI/Secondary_32Bit.json b/unittests/InstructionCountCI/Secondary_32Bit.json
+index 06f0e0e..657fad9 100644
+--- a/unittests/InstructionCountCI/Secondary_32Bit.json
++++ b/unittests/InstructionCountCI/Secondary_32Bit.json
+@@ -7,7 +7,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "push fs": {
+diff --git a/unittests/InstructionCountCI/Secondary_OpSize.json b/unittests/InstructionCountCI/Secondary_OpSize.json
+index ad577b4..edf3f58 100644
+--- a/unittests/InstructionCountCI/Secondary_OpSize.json
++++ b/unittests/InstructionCountCI/Secondary_OpSize.json
+@@ -12,7 +12,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "movupd xmm0, xmm0": {
+diff --git a/unittests/InstructionCountCI/Secondary_OpSize_FCMA.json b/unittests/InstructionCountCI/Secondary_OpSize_FCMA.json
+index 0c464bf..2f8d304 100644
+--- a/unittests/InstructionCountCI/Secondary_OpSize_FCMA.json
++++ b/unittests/InstructionCountCI/Secondary_OpSize_FCMA.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "addsubpd xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Secondary_OpSize_SVE128.json b/unittests/InstructionCountCI/Secondary_OpSize_SVE128.json
+index a282f2e..d7f12a9 100644
+--- a/unittests/InstructionCountCI/Secondary_OpSize_SVE128.json
++++ b/unittests/InstructionCountCI/Secondary_OpSize_SVE128.json
+@@ -8,7 +8,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "psrlw xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Secondary_OpSize_SVE256.json b/unittests/InstructionCountCI/Secondary_OpSize_SVE256.json
+index b758013..f25887d 100644
+--- a/unittests/InstructionCountCI/Secondary_OpSize_SVE256.json
++++ b/unittests/InstructionCountCI/Secondary_OpSize_SVE256.json
+@@ -7,7 +7,7 @@
+       "AFP"
+     ],
+     "DisabledHostFeatures": [],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "pmulhuw xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Secondary_REP.json b/unittests/InstructionCountCI/Secondary_REP.json
+index b777261..42d6747 100644
+--- a/unittests/InstructionCountCI/Secondary_REP.json
++++ b/unittests/InstructionCountCI/Secondary_REP.json
+@@ -12,7 +12,7 @@
+       "FRINTTS",
+       "CSSC"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "movss xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Secondary_REPNE.json b/unittests/InstructionCountCI/Secondary_REPNE.json
+index 8a3234d..9c931d9 100644
+--- a/unittests/InstructionCountCI/Secondary_REPNE.json
++++ b/unittests/InstructionCountCI/Secondary_REPNE.json
+@@ -10,7 +10,7 @@
+       "FCMA",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "movsd xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Secondary_REPNE_FCMA.json b/unittests/InstructionCountCI/Secondary_REPNE_FCMA.json
+index 3487fc1..5a9aaea 100644
+--- a/unittests/InstructionCountCI/Secondary_REPNE_FCMA.json
++++ b/unittests/InstructionCountCI/Secondary_REPNE_FCMA.json
+@@ -9,7 +9,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "addsubps xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Secondary_REPNE_SVE128.json b/unittests/InstructionCountCI/Secondary_REPNE_SVE128.json
+index b1d927b..60226f8 100644
+--- a/unittests/InstructionCountCI/Secondary_REPNE_SVE128.json
++++ b/unittests/InstructionCountCI/Secondary_REPNE_SVE128.json
+@@ -10,7 +10,7 @@
+       "FCMA",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "cvtpd2dq xmm0, xmm1": {
+diff --git a/unittests/InstructionCountCI/Secondary_REP_FRINTTS.json b/unittests/InstructionCountCI/Secondary_REP_FRINTTS.json
+index a052913..4d4f3d5 100644
+--- a/unittests/InstructionCountCI/Secondary_REP_FRINTTS.json
++++ b/unittests/InstructionCountCI/Secondary_REP_FRINTTS.json
+@@ -12,7 +12,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "cvttss2si eax, xmm0": {
+diff --git a/unittests/InstructionCountCI/Secondary_SVE128.json b/unittests/InstructionCountCI/Secondary_SVE128.json
+index 1bca107..139635e 100644
+--- a/unittests/InstructionCountCI/Secondary_SVE128.json
++++ b/unittests/InstructionCountCI/Secondary_SVE128.json
+@@ -8,7 +8,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "movmskps eax, xmm0": {
+diff --git a/unittests/InstructionCountCI/VEX_map1.json b/unittests/InstructionCountCI/VEX_map1.json
+index 0f417dd..08fb385 100644
+--- a/unittests/InstructionCountCI/VEX_map1.json
++++ b/unittests/InstructionCountCI/VEX_map1.json
+@@ -13,7 +13,7 @@
+       "FLAGM2",
+       "FRINTTS"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vmovups xmm0, xmm0": {
+diff --git a/unittests/InstructionCountCI/VEX_map1_FCMA.json b/unittests/InstructionCountCI/VEX_map1_FCMA.json
+index 4e2b51c..0e505be 100644
+--- a/unittests/InstructionCountCI/VEX_map1_FCMA.json
++++ b/unittests/InstructionCountCI/VEX_map1_FCMA.json
+@@ -8,7 +8,7 @@
+       "FCMA"
+     ],
+     "DisabledHostFeatures": [],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vaddsubpd xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/VEX_map1_FRINTTS.json b/unittests/InstructionCountCI/VEX_map1_FRINTTS.json
+index 60241a4..c9a7481 100644
+--- a/unittests/InstructionCountCI/VEX_map1_FRINTTS.json
++++ b/unittests/InstructionCountCI/VEX_map1_FRINTTS.json
+@@ -13,7 +13,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vcvttss2si eax, xmm0": {
+diff --git a/unittests/InstructionCountCI/VEX_map2.json b/unittests/InstructionCountCI/VEX_map2.json
+index 7f48150..3281d03 100644
+--- a/unittests/InstructionCountCI/VEX_map2.json
++++ b/unittests/InstructionCountCI/VEX_map2.json
+@@ -13,7 +13,7 @@
+       "I8MM",
+       "DOTPROD"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpshufb xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/VEX_map2_DOTPROD.json b/unittests/InstructionCountCI/VEX_map2_DOTPROD.json
+index 38badf3..8edc48e 100644
+--- a/unittests/InstructionCountCI/VEX_map2_DOTPROD.json
++++ b/unittests/InstructionCountCI/VEX_map2_DOTPROD.json
+@@ -13,7 +13,7 @@
+       "SVEBITPERM",
+       "I8MM"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpdpbusd xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/VEX_map2_I8MM.json b/unittests/InstructionCountCI/VEX_map2_I8MM.json
+index c235c4a..6c19c2c 100644
+--- a/unittests/InstructionCountCI/VEX_map2_I8MM.json
++++ b/unittests/InstructionCountCI/VEX_map2_I8MM.json
+@@ -12,7 +12,7 @@
+       "FLAGM2",
+       "SVEBITPERM"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpdpbusd xmm0, xmm1, xmm2": {
+diff --git a/unittests/InstructionCountCI/VEX_map2_svebitperm.json b/unittests/InstructionCountCI/VEX_map2_svebitperm.json
+index cb9be02..76debda 100644
+--- a/unittests/InstructionCountCI/VEX_map2_svebitperm.json
++++ b/unittests/InstructionCountCI/VEX_map2_svebitperm.json
+@@ -11,7 +11,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "pext eax, ebx, ecx": {
+diff --git a/unittests/InstructionCountCI/VEX_map3.json b/unittests/InstructionCountCI/VEX_map3.json
+index 40ad768..88592f2 100644
+--- a/unittests/InstructionCountCI/VEX_map3.json
++++ b/unittests/InstructionCountCI/VEX_map3.json
+@@ -8,7 +8,7 @@
+     "DisabledHostFeatures": [
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpermq ymm0, ymm1, 1": {
+diff --git a/unittests/InstructionCountCI/VEX_map_group.json b/unittests/InstructionCountCI/VEX_map_group.json
+index 01c0e61..b76d1fe 100644
+--- a/unittests/InstructionCountCI/VEX_map_group.json
++++ b/unittests/InstructionCountCI/VEX_map_group.json
+@@ -9,7 +9,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "vpsrlw xmm0, xmm1, 0": {
+diff --git a/unittests/InstructionCountCI/X87ldst-SVE.json b/unittests/InstructionCountCI/X87ldst-SVE.json
+index a7a673d..b9f7499 100644
+--- a/unittests/InstructionCountCI/X87ldst-SVE.json
++++ b/unittests/InstructionCountCI/X87ldst-SVE.json
+@@ -11,7 +11,7 @@
+       "FLAGM2",
+       "RPRES"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "fstp tword [rax]": {
+diff --git a/unittests/InstructionCountCI/x87.json b/unittests/InstructionCountCI/x87.json
+index 01434c5..d931863 100644
+--- a/unittests/InstructionCountCI/x87.json
++++ b/unittests/InstructionCountCI/x87.json
+@@ -10,7 +10,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "fadd dword [rax]": {
+diff --git a/unittests/InstructionCountCI/x87_32Bit.json b/unittests/InstructionCountCI/x87_32Bit.json
+index 1cee476..7dda0e9 100644
+--- a/unittests/InstructionCountCI/x87_32Bit.json
++++ b/unittests/InstructionCountCI/x87_32Bit.json
+@@ -10,7 +10,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "Multiple fld/fst": {
+diff --git a/unittests/InstructionCountCI/x87_f64.json b/unittests/InstructionCountCI/x87_f64.json
+index 4a025c5..dd7fa5c 100644
+--- a/unittests/InstructionCountCI/x87_f64.json
++++ b/unittests/InstructionCountCI/x87_f64.json
+@@ -12,7 +12,7 @@
+       "FLAGM",
+       "FLAGM2"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "fadd dword [rax]": {
+diff --git a/unittests/InstructionCountCI/x87_f64_32Bit.json b/unittests/InstructionCountCI/x87_f64_32Bit.json
+index 17dac9e..66cb211 100644
+--- a/unittests/InstructionCountCI/x87_f64_32Bit.json
++++ b/unittests/InstructionCountCI/x87_f64_32Bit.json
+@@ -15,7 +15,7 @@
+       "SVE256",
+       "CSSC"
+     ],
+-    "BinaryCacheVersion": 33054
++    "BinaryCacheVersion": 33310
+   },
+   "Instructions": {
+     "fstp dword [ebx*4+0x204a20]": {
+-- 
+2.39.5 (Apple Git-154)
+

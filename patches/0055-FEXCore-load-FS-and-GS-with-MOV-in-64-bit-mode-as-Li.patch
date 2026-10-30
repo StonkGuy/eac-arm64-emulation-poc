@@ -1,0 +1,279 @@
+From 4dca50ff0868740834637ad043c311d7162aac47 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 10:05:27 +0200
+Subject: [PATCH] FEXCore: load FS and GS with MOV in 64-bit mode as Linux does
+
+MOV to FS or GS in 64-bit mode was refused as undecodable, so the guest
+got a different exception (Wine: illegal instruction) where hardware
+loads the selector or raises #GP. It is now a data segment load against
+Linux's x86-64 GDT: a null selector, or one of the four descriptors user
+mode may use (32-bit and 64-bit user code, user data, CPU/node; base 0),
+loads the selector and sets the base to 0; anything else (an LDT
+selector without an LDT, kernel and system descriptors, empty TLS slots,
+past the GDT limit) raises #GP with the selector as its error code,
+delivered as SIGSEGV, si_code SI_KERNEL, trapno 13, selector and base
+unchanged. Wine reports an LDT selector's #GP as an access violation with
+information 0/0. MOV from FS or GS returns the selector last loaded, and
+arch_prctl(ARCH_SET_FS/GS) leaves a null selector, as Linux does.
+
+The #GP's error code is only known at run time: the new IR op
+BreakErrorCode takes it from a register (Break with a constant error code
+otherwise).
+
+THE FINALS' and ARC Raiders' anti-cheat (Denuvo) do this: FEX's log for
+THE FINALS shows "We don't support modifying FS selector in 64bit mode!"
+115 times and the probe at the same address faulting every 20 s; ARC
+Raiders' logs (StonkGuy/eac-arm64-emulation-poc#1, with a first patch by
+the reporter that stored the selector without the checks) show the same.
+
+eac-tests/seg-load64 (62 cases): native x86-64 PASS (oracle), FEX before
+does not get past the first load, FEX after prints output identical to
+native. ASM test Multiblock/InvalidBlockStateIsolation used MOV FS as its
+unsupported instruction; it uses a32 stosb now.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ FEXCore/Source/Interface/Core/JIT/MiscOps.cpp | 31 ++++++++++
+ .../Interface/Core/OpcodeDispatcher.cpp       | 61 ++++++++++++++-----
+ .../Source/Interface/Core/OpcodeDispatcher.h  |  5 ++
+ FEXCore/Source/Interface/IR/IR.json           |  6 ++
+ FEXCore/Source/Interface/IR/IREmitter.cpp     |  3 +-
+ .../LinuxSyscalls/Syscalls/Thread.cpp         |  2 +
+ .../Multiblock/InvalidBlockStateIsolation.asm |  2 +-
+ 7 files changed, 93 insertions(+), 17 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp b/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
+index 6e8df95..d106031 100644
+--- a/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
++++ b/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
+@@ -96,6 +96,37 @@ DEF_OP(Break) {
+   }
+ }
+ 
++DEF_OP(BreakErrorCode) {
++  auto Op = IROp->C<IR::IROp_BreakErrorCode>();
++
++  // The error code first: resetting the stack may use TMP1
++  uxth(ARMEmitter::Size::i64Bit, TMP2, GetReg(Op->ErrorCode));
++  ResetStack();
++
++  Core::CpuStateFrame::SynchronousFaultDataStruct State = {
++    .FaultToTopAndGeneratedException = 1,
++    .Signal = Op->Reason.Signal,
++    .TrapNo = Op->Reason.TrapNumber,
++    .si_code = Op->Reason.si_code,
++    .err_code = 0,
++  };
++  static_assert(offsetof(Core::CpuStateFrame::SynchronousFaultDataStruct, err_code) == 4, "err_code is bits 32-47");
++
++  uint64_t Constant {};
++  memcpy(&Constant, &State, sizeof(State));
++
++  LoadConstant(ARMEmitter::Size::i64Bit, TMP1, Constant);
++  bfi(ARMEmitter::Size::i64Bit, TMP1, TMP2, 32, 16);
++  str(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, SynchronousFaultData));
++
++  switch (Op->Reason.Signal) {
++  case Core::FAULT_SIGILL: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGILL)); break;
++  case Core::FAULT_SIGSEGV: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGSEGV)); break;
++  default: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGTRAP)); break;
++  }
++  br(TMP1);
++}
++
+ DEF_OP(GetRoundingMode) {
+   auto Dst = GetReg(Node);
+   mrs(Dst, ARMEmitter::SystemRegister::FPCR);
+diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
+index 0dac7aa..69a05ea 100644
+--- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
++++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
+@@ -1255,6 +1255,46 @@ void OpDispatchBuilder::FLAGControlOp(OpcodeArgs) {
+ }
+ 
+ 
++// MOV to FS or GS in 64-bit mode: a data segment load against Linux's x86-64 GDT. A null selector (0-3), or one of the
++// four descriptors Linux gives user mode (index 4 32-bit user code, 5 user data, 6 64-bit user code, 15 CPU/node, all
++// DPL 3 with base 0), loads the selector and sets the base to 0 (a null selector clears it on Intel and on AMD since
++// Zen 2). Anything else raises #GP with the selector as its error code: there is no LDT unless the program creates one
++// (FEX does not support that in 64-bit mode), the other GDT entries are kernel, system or empty TLS descriptors, and
++// index 16 and up is past the GDT limit. The kernel delivers the #GP as SIGSEGV, si_code SI_KERNEL, trapno 13.
++// Anti-tamper code (THE FINALS', ARC Raiders') loads FS like this and tells hardware from a translator by the result.
++void OpDispatchBuilder::MOVSegFSGS64(OpcodeArgs, Ref Selector, uint32_t IndexOffset, uint32_t BaseOffset) {
++  // Loadable: TI (bit 2) clear, index (bits 3-15) below 16 with its bit set in 0x8071 (indices 0, 4, 5, 6, 15)
++  Ref Index = _Bfe(OpSize::i32Bit, 13, 3, Selector);
++  Ref TI = _Bfe(OpSize::i32Bit, 1, 2, Selector);
++  Ref Allowed = _And(OpSize::i32Bit, _Lshr(OpSize::i32Bit, Constant(0x8071), Index), Constant(1));
++  Allowed = _Select(OpSize::i32Bit, OpSize::i32Bit, CondClass::ULT, Index, Constant(16), Allowed, Constant(0));
++  Allowed = _Select(OpSize::i32Bit, OpSize::i32Bit, CondClass::EQ, TI, Constant(0), Allowed, Constant(0));
++
++  auto FaultBlock = CreateNewCodeBlockAfter(GetCurrentBlock());
++  auto ContinueBlock = CreateNewCodeBlockAfter(FaultBlock);
++  auto CondJump_ = CondJump(Allowed, CondClass::NEQ);
++  SetTrueJumpTarget(CondJump_, ContinueBlock);
++  SetFalseJumpTarget(CondJump_, FaultBlock);
++
++  // IR values do not live across blocks: each block reads the selector again (the jump flushed the guest registers)
++  SetCurrentCodeBlock(FaultBlock);
++  StartNewBlock();
++  // A fault: RIP points at the MOV, the selector and base are unchanged
++  Ref FaultSelector = LoadSourceGPR_WithOpSize(Op, Op->Src[0], OpSize::i16Bit, Op->Flags);
++  _StoreContextGPR(GetGPROpSize(), GetRelocatedPC(Op, -Op->InstSize), offsetof(FEXCore::Core::CPUState, rip));
++  IR::BreakDefinition Reason {};
++  Reason.Signal = Core::FAULT_SIGSEGV;
++  Reason.TrapNumber = X86State::X86_TRAPNO_GP;
++  Reason.si_code = 0x80; // SI_KERNEL
++  BlockSetRIP = true;
++  BreakErrorCode(_And(OpSize::i32Bit, FaultSelector, Constant(0xfffc)), Reason);
++
++  SetCurrentCodeBlock(ContinueBlock);
++  StartNewBlock();
++  _StoreContextGPR(OpSize::i16Bit, LoadSourceGPR_WithOpSize(Op, Op->Src[0], OpSize::i16Bit, Op->Flags), IndexOffset);
++  _StoreContextGPR(OpSize::i64Bit, Constant(0), BaseOffset);
++}
++
+ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+   // In x86-64 mode the accesses to the segment registers end up being constant zero moves
+   // Aside from FS/GS
+@@ -1268,7 +1308,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+   // selected for the registers
+   // This statement is actually untrue, the instructions will /actually/ load 16bits in to the selector portion of the register!
+   // Tested on a Zen+ CPU, the selector is the portion that is modified!
+-  // We don't currently support FS/GS selector modifying, so this needs to be asserted out
++  // In 64-bit mode loading FS or GS checks the selector against Linux's GDT (MOVSegFSGS64)
+   // The loads here also load the selector, NOT the base
+ 
+   if (ToSeg) {
+@@ -1306,8 +1346,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+         _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, gs_idx));
+         UpdatePrefixFromSegment(Src, FEXCore::X86Tables::DecodeFlags::FLAG_GS_PREFIX);
+       } else {
+-        LogMan::Msg::EFmt("We don't support modifying GS selector in 64bit mode!");
+-        DecodeFailure = true;
++        MOVSegFSGS64(Op, Src, offsetof(FEXCore::Core::CPUState, gs_idx), offsetof(FEXCore::Core::CPUState, gs_cached));
+       }
+       break;
+     case FEXCore::X86State::REG_RSP: // FS
+@@ -1316,8 +1355,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+         _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, fs_idx));
+         UpdatePrefixFromSegment(Src, FEXCore::X86Tables::DecodeFlags::FLAG_FS_PREFIX);
+       } else {
+-        LogMan::Msg::EFmt("We don't support modifying FS selector in 64bit mode!");
+-        DecodeFailure = true;
++        MOVSegFSGS64(Op, Src, offsetof(FEXCore::Core::CPUState, fs_idx), offsetof(FEXCore::Core::CPUState, fs_cached));
+       }
+       break;
+     default: UnimplementedOp(Op); return;
+@@ -1344,19 +1382,12 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+       break;
+     case FEXCore::X86State::REG_RBP: // GS
+     case FEXCore::X86State::REG_R13: // GS
+-      if (Is64BitMode) {
+-        Segment = Constant(0);
+-      } else {
+-        Segment = _LoadContextGPR(OpSize::i16Bit, offsetof(FEXCore::Core::CPUState, gs_idx));
+-      }
++      // in 64-bit mode too: the selector last loaded (0 until the program loads one, as on Linux)
++      Segment = _LoadContextGPR(OpSize::i16Bit, offsetof(FEXCore::Core::CPUState, gs_idx));
+       break;
+     case FEXCore::X86State::REG_RSP: // FS
+     case FEXCore::X86State::REG_R12: // FS
+-      if (Is64BitMode) {
+-        Segment = Constant(0);
+-      } else {
+-        Segment = _LoadContextGPR(OpSize::i16Bit, offsetof(FEXCore::Core::CPUState, fs_idx));
+-      }
++      Segment = _LoadContextGPR(OpSize::i16Bit, offsetof(FEXCore::Core::CPUState, fs_idx));
+       break;
+     default: UnimplementedOp(Op); return;
+     }
+diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
+index b02dbdf..9d39337 100644
+--- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
++++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
+@@ -211,6 +211,10 @@ public:
+     FlushRegisterCache();
+     return _Break(Reason);
+   }
++  IRPair<IROp_BreakErrorCode> BreakErrorCode(Ref ErrorCode, BreakDefinition Reason) {
++    FlushRegisterCache();
++    return _BreakErrorCode(ErrorCode, Reason);
++  }
+   IRPair<IROp_Thunk> Thunk(Ref ArgPtr, SHA256Sum ThunkNameHash) {
+     FlushRegisterCache();
+     return _Thunk(ArgPtr, ThunkNameHash);
+@@ -410,6 +414,7 @@ public:
+   void XCHGRAXOp(OpcodeArgs);
+   void SAHFOp(OpcodeArgs);
+   void LAHFOp(OpcodeArgs);
++  void MOVSegFSGS64(OpcodeArgs, Ref Selector, uint32_t IndexOffset, uint32_t BaseOffset);
+   void MOVSegOp(OpcodeArgs, bool ToSeg);
+   void FLAGControlOp(OpcodeArgs);
+   void MOVOffsetOp(OpcodeArgs);
+diff --git a/FEXCore/Source/Interface/IR/IR.json b/FEXCore/Source/Interface/IR/IR.json
+index 8805200..263ddee 100644
+--- a/FEXCore/Source/Interface/IR/IR.json
++++ b/FEXCore/Source/Interface/IR/IR.json
+@@ -324,6 +324,12 @@
+       "Break BreakDefinition:$Reason": {
+         "HasSideEffects": true
+       },
++      "BreakErrorCode GPR:$ErrorCode, BreakDefinition:$Reason": {
++        "HasSideEffects": true,
++        "Desc": ["Break whose fault error code is the low 16 bits of $ErrorCode, known only at run time",
++                 "(a #GP with a selector as its error code); Reason.ErrorRegister is not used"
++                ]
++      },
+       "CallbackReturn": {
+         "HasSideEffects": true
+       },
+diff --git a/FEXCore/Source/Interface/IR/IREmitter.cpp b/FEXCore/Source/Interface/IR/IREmitter.cpp
+index f305ad3..40b02b3 100644
+--- a/FEXCore/Source/Interface/IR/IREmitter.cpp
++++ b/FEXCore/Source/Interface/IR/IREmitter.cpp
+@@ -22,7 +22,8 @@ static bool IsFragmentExit(FEXCore::IR::IROps Op) {
+   case OP_THREADREMOVECODEENTRY:
+   case OP_SYSCALL:
+   case OP_EXITFUNCTION:
+-  case OP_BREAK: return true;
++  case OP_BREAK:
++  case OP_BREAKERRORCODE: return true;
+   default: return false;
+   }
+ }
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+index a92c1b0..1ff5d36 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+@@ -556,6 +556,7 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+         return -EPERM;
+       }
+       Frame->State.gs_cached = addr;
++      Frame->State.gs_idx = 0; // as Linux: setting the base leaves a null selector
+       Result = 0;
+       break;
+     case 0x1002: // ARCH_SET_FS
+@@ -564,6 +565,7 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+         return -EPERM;
+       }
+       Frame->State.fs_cached = addr;
++      Frame->State.fs_idx = 0;
+       Result = 0;
+       break;
+     case 0x1003: // ARCH_GET_FS
+diff --git a/unittests/ASM/Multiblock/InvalidBlockStateIsolation.asm b/unittests/ASM/Multiblock/InvalidBlockStateIsolation.asm
+index 9429337..eb24801 100644
+--- a/unittests/ASM/Multiblock/InvalidBlockStateIsolation.asm
++++ b/unittests/ASM/Multiblock/InvalidBlockStateIsolation.asm
+@@ -16,7 +16,7 @@ test eax, eax
+ jz valid_block
+ 
+ invalid_block:
+-mov fs, ax
++a32 stosb
+ 
+ valid_block:
+ jmp success
+-- 
+2.39.5 (Apple Git-154)
+

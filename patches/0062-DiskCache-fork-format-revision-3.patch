@@ -1,0 +1,29 @@
+From 7520def169d81a2f68c215999fddb85c64369001 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 16:24:26 +0200
+Subject: [PATCH] DiskCache: fork format revision 3
+
+Over-long instructions and XSETBV change the code generated for them.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ FEXCore/Source/Interface/Core/DiskCache.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/FEXCore/Source/Interface/Core/DiskCache.h b/FEXCore/Source/Interface/Core/DiskCache.h
+index fe217ff..07911c3 100644
+--- a/FEXCore/Source/Interface/Core/DiskCache.h
++++ b/FEXCore/Source/Interface/Core/DiskCache.h
+@@ -256,7 +256,8 @@ namespace DiskCache {
+   // Revision 1: everything on eac-2610 up to here (POPF flags, IRET NT #GP, ...), which kept upstream's 30, so a
+   // cache filled by one fork build was reused by the next.
+   // Revision 2: MOV to and from FS/GS in 64-bit mode.
+-  static constexpr uint16_t FormatVersion = 0x8000 | (2 << 8) | 30;
++  // Revision 3: instructions longer than 15 bytes and XSETBV raise #GP(0).
++  static constexpr uint16_t FormatVersion = 0x8000 | (3 << 8) | 30;
+ 
+   static constexpr uint32_t LOOKUP_KEY_MAX_BUCKET_DEPTH = 500;
+ 
+-- 
+2.39.5 (Apple Git-154)
+

@@ -1,0 +1,58 @@
+From 27b1682ad83bfdbbc04bd3b050aee6edbc915df6 Mon Sep 17 00:00:00 2001
+From: Ryan Houdek <Sonicadvance1@gmail.com>
+Date: Tue, 27 Oct 2026 09:02:13 -0700
+Subject: [PATCH] unittests/ASM: Adds a test for instruction encoding
+
+(cherry picked from commit 95a305bc4db4797cc7c9df5343d0fb7f5863294f)
+---
+ unittests/ASM/FEX_bugs/two_byte_0xbx.asm | 38 ++++++++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+ create mode 100644 unittests/ASM/FEX_bugs/two_byte_0xbx.asm
+
+diff --git a/unittests/ASM/FEX_bugs/two_byte_0xbx.asm b/unittests/ASM/FEX_bugs/two_byte_0xbx.asm
+new file mode 100644
+index 0000000..3590fb0
+--- /dev/null
++++ b/unittests/ASM/FEX_bugs/two_byte_0xbx.asm
+@@ -0,0 +1,38 @@
++%ifdef CONFIG
++{
++  "RegData": {
++    "RAX": "0x4142434445464748",
++    "RBX": "0x5152535455560006",
++    "RCX": "0x6162636465660006",
++    "RDX": "0x5152535455560003",
++    "RDI": "0x6162636465660003",
++    "RSI": "0x5152535455560001",
++    "RSP": "0x6162636465660001"
++  }
++}
++%endif
++
++; FEX-Emu had a bug where the secondary two-byte table decoding failed to decode the 0xBX nibble correctly.
++; Depending on the order of the prefix FEX chose an incorrect instruction or invalid instruction depending.
++; Found in Order of the Sinking Star (SteamAppID 499170).
++
++mov rax, 0x4142434445464748
++mov rbx, 0x5152535455565758
++mov rcx, 0x6162636465666768
++
++mov rdx, 0x5152535455565758
++mov rdi, 0x6162636465666768
++
++mov rsi, 0x5152535455565758
++mov rsp, 0x6162636465666768
++
++db 0x66, 0xf3, 0x0f, 0xb8, 0xd8 ; popcnt bx, ax
++db 0xf3, 0x66, 0x0f, 0xb8, 0xc8 ; popcnt cx, ax
++
++db 0x66, 0xf3, 0x0f, 0xbc, 0xd0 ; tzcnt dx, ax
++db 0xf3, 0x66, 0x0f, 0xbc, 0xf8 ; tzcnt di, ax
++
++db 0x66, 0xf3, 0x0f, 0xbd, 0xf0 ; lzcnt si, ax
++db 0xf3, 0x66, 0x0f, 0xbd, 0xe0 ; lzcnt sp, ax
++
++hlt
+-- 
+2.39.5 (Apple Git-154)
+

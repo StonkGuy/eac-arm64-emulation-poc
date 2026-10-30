@@ -1,0 +1,326 @@
+From a29c296ced0afb6479c07027c4c80db58ca163bf Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 22:30:09 +0200
+Subject: [PATCH] FEXCore: read guest code fault-safely while compiling
+
+The frontend reads guest code with plain loads after checking the
+executable range, while holding the code-invalidation lock. Another
+guest thread can revoke the page between the check and the read: a guest
+mprotect or munmap changes the host protection first and invalidates
+translated code afterwards, and the multiblock decoder reads ahead into
+pages the guest has not executed (branch targets up to 4 pages on). The
+load then faults inside FEX. A synchronous fault is not deferred, so it
+reached the guest with the compiler's frames below it; a guest handler
+that resumes elsewhere abandons those frames, and the lock stays
+read-held: the next invalidation waits forever and every compile queues
+behind it.
+
+THE FINALS' anti-cheat re-protects its code pages while other threads run
+next to them and froze this way after 8 to 16 minutes: 67 threads waited
+on CodeInvalidationMutex, whose word read 0x40010001 (one read owner,
+one write waiter, readers waiting).
+
+Copy guest code through FaultSafeRead (a byte loop whose load the
+frontend's SIGSEGV handler resumes as a failed copy, like
+FaultSafeUserMemAccess::CopyFromUser) in the decoder (PeekByte,
+ReadData), for the SMC CRC of an instruction, and for the disk cache's
+code hashes and stored copy. A read that faults is a byte that cannot be
+fetched: the decoder ends the block there (a fetch fault only if the
+guest really executes it, as on hardware), the CRC never matches, and
+the disk cache skips the block.
+
+Test: eac-tests/decode-race stalled in 2 of 3 runs before, passes 5 of 5
+after (8.6 to 10.3 million protection toggles per run).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ FEXCore/Source/CMakeLists.txt                 |  1 +
+ FEXCore/Source/Interface/Core/Core.cpp        | 18 +++++--
+ FEXCore/Source/Interface/Core/DiskCache.cpp   | 38 +++++++++++++--
+ FEXCore/Source/Interface/Core/Frontend.cpp    | 13 +++--
+ FEXCore/Source/Utils/FaultSafeRead.cpp        | 48 +++++++++++++++++++
+ FEXCore/include/FEXCore/Utils/FaultSafeRead.h | 27 +++++++++++
+ .../LinuxSyscalls/FaultSafeUserMemAccess.cpp  |  4 ++
+ 7 files changed, 135 insertions(+), 14 deletions(-)
+ create mode 100644 FEXCore/Source/Utils/FaultSafeRead.cpp
+ create mode 100644 FEXCore/include/FEXCore/Utils/FaultSafeRead.h
+
+diff --git a/FEXCore/Source/CMakeLists.txt b/FEXCore/Source/CMakeLists.txt
+index dd8e4aa..254b355 100644
+--- a/FEXCore/Source/CMakeLists.txt
++++ b/FEXCore/Source/CMakeLists.txt
+@@ -4,6 +4,7 @@ set(FEXCORE_BASE_SRCS
+   Interface/Config/Config.cpp
+   Utils/Allocator.cpp
+   Utils/FileLoading.cpp
++  Utils/FaultSafeRead.cpp
+   Utils/FileUtils.cpp
+   Utils/ForcedAssert.cpp
+   Utils/LogManager.cpp
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+index cf8b146..c3acd33 100644
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@ -31,6 +31,7 @@ $end_info$
+ #include "Utils/Allocator.h"
+ #include "Utils/Allocator/HostAllocator.h"
+ #include "Utils/crc32.h"
++#include <FEXCore/Utils/FaultSafeRead.h>
+ #include <FEXCore/Utils/SpinWaitLock.h>
+ #include "Utils/variable_length_integer.h"
+ 
+@@ -650,7 +651,10 @@ ContextImpl::GenerateIR(FEXCore::Core::InternalThreadState* Thread, uint64_t Gue
+           auto ExistingCodePtr = reinterpret_cast<uint8_t*>(Block.Entry + BlockInstructionsLength);
+           auto InstAddressReg = Thread->OpDispatcher->_EntrypointOffset(GPRSize, InstAddress - GuestRIP);
+ 
+-          auto Value = FEXCore::Utils::crc32(ExistingCodePtr, DecodedInfo->InstSize);
++          // Another guest thread can revoke the page after decoding: a CRC that never matches then re-translates.
++          uint8_t InstBytes[16];
++          const bool Readable = FEXCore::Utils::FaultSafeRead::Copy(InstBytes, ExistingCodePtr, DecodedInfo->InstSize);
++          auto Value = Readable ? FEXCore::Utils::crc32(InstBytes, DecodedInfo->InstSize) : ~0U;
+           auto CRC = WantsDiskCachePatching ?
+                        Thread->OpDispatcher->_PatchableGuestCRC(IR::OpSize::i64Bit, Value, (int64_t)ExistingCodePtr, DecodedInfo->InstSize) :
+                        Thread->OpDispatcher->Constant(Value);
+@@ -1008,10 +1012,14 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+       if (DebugData && DebugData->Relocations) {
+         Relocations = *DebugData->Relocations;
+       }
+-      std::span<const uint8_t> GuestCode = {reinterpret_cast<const uint8_t*>(StartAddr), Length};
+-      const Frontend::Decoder::DecodedBlockInformation* BlockInfo =
+-        NeedsAddGuestCodeRanges ? Thread->FrontendDecoder->GetDecodedBlockInfo() : nullptr;
+-      DiskCache.Store(Thread, Region, GuestRIP, *DiskCacheGuestCodeKey, GuestCode, CompiledCode, Relocations, BlockInfo);
++      // A copy of the guest code: another guest thread can revoke its pages meanwhile (see FaultSafeRead).
++      fextl::vector<uint8_t> GuestCodeCopy(Length);
++      if (FEXCore::Utils::FaultSafeRead::Copy(GuestCodeCopy.data(), reinterpret_cast<const void*>(StartAddr), Length)) {
++        std::span<const uint8_t> GuestCode = GuestCodeCopy;
++        const Frontend::Decoder::DecodedBlockInformation* BlockInfo =
++          NeedsAddGuestCodeRanges ? Thread->FrontendDecoder->GetDecodedBlockInfo() : nullptr;
++        DiskCache.Store(Thread, Region, GuestRIP, *DiskCacheGuestCodeKey, GuestCode, CompiledCode, Relocations, BlockInfo);
++      }
+     }
+ 
+     if (CodeMapWriter && Region && Region->FileStartVA != 0) {
+diff --git a/FEXCore/Source/Interface/Core/DiskCache.cpp b/FEXCore/Source/Interface/Core/DiskCache.cpp
+index cf34191..2ffff89 100644
+--- a/FEXCore/Source/Interface/Core/DiskCache.cpp
++++ b/FEXCore/Source/Interface/Core/DiskCache.cpp
+@@ -11,6 +11,7 @@
+ #include <FEXCore/fextl/memory.h>
+ #include <FEXCore/fextl/string.h>
+ #include <FEXCore/HLE/SyscallHandler.h>
++#include <FEXCore/Utils/FaultSafeRead.h>
+ #include <FEXCore/Utils/File.h>
+ #include <FEXCore/Utils/FileUtils.h>
+ #include <FEXCore/Utils/LogManager.h>
+@@ -22,6 +23,24 @@
+ #include <cstring>
+ #include <atomic>
+ 
++namespace {
++// Hashes guest memory that another guest thread can revoke meanwhile (see FaultSafeRead): false if it faulted.
++template<typename UpdateFn>
++bool HashGuestMemory(UpdateFn&& Update, uint64_t Address, uint64_t Size) {
++  uint8_t Buffer[256];
++  while (Size) {
++    const uint64_t Chunk = std::min<uint64_t>(Size, sizeof(Buffer));
++    if (!FEXCore::Utils::FaultSafeRead::Copy(Buffer, reinterpret_cast<const void*>(Address), Chunk)) {
++      return false;
++    }
++    Update(Buffer, Chunk);
++    Address += Chunk;
++    Size -= Chunk;
++  }
++  return true;
++}
++} // namespace
++
+ namespace FEXCore {
+ 
+ namespace DiskCache {
+@@ -569,12 +588,18 @@ namespace DiskCache {
+         }
+         uint64_t HashStart = SubBlock.Entry;
+         // skip over masked in-block data and data/etc gaps between blocks
++        auto Update = [&](const uint8_t* Bytes, uint64_t Size) {
++          XXH3_64bits_update(&HashState, Bytes, Size);
++        };
+         for (auto& DataMask : SubBlock.DataMasks) {
+-          XXH3_64bits_update(&HashState, reinterpret_cast<const uint8_t*>(HashStart), DataMask.FieldAddress - HashStart);
++          if (!HashGuestMemory(Update, HashStart, DataMask.FieldAddress - HashStart)) {
++            return std::nullopt;
++          }
+           HashStart = DataMask.FieldAddress + DataMask.ValueSize;
+         }
+-        if (HashStart != SubBlock.Entry + SubBlock.Size) {
+-          XXH3_64bits_update(&HashState, reinterpret_cast<const uint8_t*>(HashStart), SubBlock.Size - (HashStart - SubBlock.Entry));
++        if (HashStart != SubBlock.Entry + SubBlock.Size &&
++            !HashGuestMemory(Update, HashStart, SubBlock.Size - (HashStart - SubBlock.Entry))) {
++          return std::nullopt;
+         }
+       }
+       GuestCodeKey = XXH3_64bits_digest(&HashState);
+@@ -697,8 +722,13 @@ namespace DiskCache {
+         if (FirstHash || LastFootprintHashed != CurrentFootprint) {
+           XXH3_state_t HashState;
+           XXH3_128bits_reset(&HashState);
++          auto Update = [&](const uint8_t* Bytes, uint64_t Size) {
++            XXH3_128bits_update(&HashState, Bytes, Size);
++          };
+           for (uint32_t i = 0; i < Entry.GuestExtents.size(); i += 2) {
+-            XXH3_128bits_update(&HashState, reinterpret_cast<uint8_t*>(GuestRIP) + Entry.GuestExtents[i], Entry.GuestExtents[i + 1]);
++            if (!HashGuestMemory(Update, GuestRIP + Entry.GuestExtents[i], Entry.GuestExtents[i + 1])) {
++              return std::nullopt;
++            }
+           }
+           LiveGuestHash = XXH3_128bits_digest(&HashState);
+           LastFootprintHashed = CurrentFootprint;
+diff --git a/FEXCore/Source/Interface/Core/Frontend.cpp b/FEXCore/Source/Interface/Core/Frontend.cpp
+index 6667f16..8f08849 100644
+--- a/FEXCore/Source/Interface/Core/Frontend.cpp
++++ b/FEXCore/Source/Interface/Core/Frontend.cpp
+@@ -19,6 +19,7 @@ $end_info$
+ #include <FEXCore/Core/X86Enums.h>
+ #include <FEXCore/HLE/SyscallHandler.h>
+ #include <FEXCore/Utils/Allocator.h>
++#include <FEXCore/Utils/FaultSafeRead.h>
+ #include <FEXCore/Utils/LogManager.h>
+ #include <FEXCore/Utils/Profiler.h>
+ #include <FEXCore/Utils/Telemetry.h>
+@@ -135,8 +136,11 @@ uint8_t Decoder::ReadByte() {
+ 
+ std::optional<uint8_t> Decoder::PeekByte(uint8_t Offset) {
+   uint64_t ByteAddress = reinterpret_cast<uint64_t>(InstStream.InstStream + InstructionSize + Offset);
+-  if (CheckRangeExecutable(ByteAddress, 1)) {
+-    return InstStream.AdjustedInstStream[InstructionSize + Offset];
++  uint8_t Byte;
++  // The range check is no guarantee: another guest thread can revoke the page before the read (see FaultSafeRead).
++  if (CheckRangeExecutable(ByteAddress, 1) &&
++      FEXCore::Utils::FaultSafeRead::Copy(&Byte, &InstStream.AdjustedInstStream[InstructionSize + Offset], 1)) {
++    return Byte;
+   } else {
+     return std::nullopt;
+   }
+@@ -149,9 +153,8 @@ std::pair<uint64_t, bool> Decoder::ReadData(uint8_t Size) {
+   uint64_t Address = reinterpret_cast<uint64_t>(InstStream.InstStream + InstructionSize);
+   LastFieldReadOffset = (uint8_t)InstructionSize;
+   LastFieldReadSize = Size;
+-  if (CheckRangeExecutable(Address, Size)) {
+-    std::memcpy(&Res, &InstStream.AdjustedInstStream[InstructionSize], Size);
+-  } else {
++  // The range check is no guarantee: another guest thread can revoke the page before the read (see FaultSafeRead).
++  if (!CheckRangeExecutable(Address, Size) || !FEXCore::Utils::FaultSafeRead::Copy(&Res, &InstStream.AdjustedInstStream[InstructionSize], Size)) {
+     HitNonExecutableRange = true;
+     // See PeekByte, this specific case may cause some executable memory to read as 0 but it doesn't matter as the entire instruction will be rolled back anyway.
+     Res = 0;
+diff --git a/FEXCore/Source/Utils/FaultSafeRead.cpp b/FEXCore/Source/Utils/FaultSafeRead.cpp
+new file mode 100644
+index 0000000..33efc6c
+--- /dev/null
++++ b/FEXCore/Source/Utils/FaultSafeRead.cpp
+@@ -0,0 +1,48 @@
++// SPDX-License-Identifier: MIT
++#include <FEXCore/Utils/FaultSafeRead.h>
++
++#include <cstring>
++
++namespace FEXCore::Utils::FaultSafeRead {
++#if defined(ARCHITECTURE_arm64) && !defined(_WIN32)
++// Returns 0 when every byte was copied. When the load faults, the frontend's SIGSEGV handler returns from here with
++// a non-zero x0 (see IsFaultLocation).
++__attribute__((naked)) static size_t CopyImpl(void* Dest, const void* Src, size_t Size) {
++  __asm volatile(R"(
++  // Early exit if a copy of size zero.
++  cbz x2, 2f;
++
++  1:
++  .globl FEXCore_FaultSafeRead_FaultInst
++  FEXCore_FaultSafeRead_FaultInst:
++    ldrb w3, [x1], 1; // <- This line can fault.
++    strb w3, [x0], 1;
++    sub x2, x2, 1;
++    cbnz x2, 1b;
++2:
++    mov x0, 0;
++    ret;
++  )" ::
++                   : "memory");
++}
++
++extern "C" uint64_t FEXCore_FaultSafeRead_FaultInst;
++
++bool Copy(void* Dest, const void* Src, size_t Size) {
++  return CopyImpl(Dest, Src, Size) == 0;
++}
++
++bool IsFaultLocation(uint64_t PC) {
++  return reinterpret_cast<void*>(PC) == &FEXCore_FaultSafeRead_FaultInst;
++}
++#else
++bool Copy(void* Dest, const void* Src, size_t Size) {
++  memcpy(Dest, Src, Size);
++  return true;
++}
++
++bool IsFaultLocation(uint64_t PC) {
++  return false;
++}
++#endif
++} // namespace FEXCore::Utils::FaultSafeRead
+diff --git a/FEXCore/include/FEXCore/Utils/FaultSafeRead.h b/FEXCore/include/FEXCore/Utils/FaultSafeRead.h
+new file mode 100644
+index 0000000..b296af1
+--- /dev/null
++++ b/FEXCore/include/FEXCore/Utils/FaultSafeRead.h
+@@ -0,0 +1,27 @@
++// SPDX-License-Identifier: MIT
++#pragma once
++#include <FEXCore/Utils/CompilerDefs.h>
++
++#include <cstddef>
++#include <cstdint>
++
++namespace FEXCore::Utils::FaultSafeRead {
++/**
++ * @brief Copies guest memory that another guest thread can unmap or protect at any time.
++ *
++ * The frontend decodes and hashes guest code while holding code-invalidation locks. A guest mprotect or munmap on
++ * another thread can revoke a page between the frontend's executable-range check and its read. A plain load then
++ * faults inside FEX, and that fault must never reach the guest: a guest handler that resumes elsewhere would leave the
++ * locks held forever.
++ *
++ * The frontend's SIGSEGV handler resumes a fault at IsFaultLocation as a failed copy.
++ *
++ * @return true if all Size bytes were copied, false if the source faulted (Dest is then partly written)
++ */
++FEX_DEFAULT_VISIBILITY bool Copy(void* Dest, const void* Src, size_t Size);
++
++/**
++ * @brief Whether PC is the load in Copy that may fault.
++ */
++FEX_DEFAULT_VISIBILITY bool IsFaultLocation(uint64_t PC);
++} // namespace FEXCore::Utils::FaultSafeRead
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp
+index 9af89be..940264d 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp
+@@ -1,6 +1,8 @@
+ // SPDX-License-Identifier: MIT
+ #include "LinuxSyscalls/Syscalls.h"
+ 
++#include <FEXCore/Utils/FaultSafeRead.h>
++
+ namespace FEX::HLE::FaultSafeUserMemAccess {
+ #ifdef ARCHITECTURE_arm64
+ __attribute__((naked)) size_t CopyFromUser(void* Dest, const void* Src, size_t Size) {
+@@ -178,6 +180,8 @@ bool IsFaultLocation(uint64_t PC) {
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == CopyToUser_FaultLocation;
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == CopyFromUser_FaultLocation;
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == StringReadable_FaultLocation;
++  // The frontend reading guest code that another guest thread revoked (FEXCore::Utils::FaultSafeRead).
++  IsMemcpyFault |= FEXCore::Utils::FaultSafeRead::IsFaultLocation(PC);
+ #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED && defined(ARCHITECTURE_arm64)
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == UserReadable_FaultLocation;
+   IsMemcpyFault |= reinterpret_cast<void*>(PC) == UserWritable_FaultLocation;
+-- 
+2.39.5 (Apple Git-154)
+

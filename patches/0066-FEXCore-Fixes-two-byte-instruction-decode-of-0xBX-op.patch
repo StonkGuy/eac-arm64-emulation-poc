@@ -1,0 +1,91 @@
+From e8303a106c8a399b6903e01eb611f16372644b55 Mon Sep 17 00:00:00 2001
+From: Ryan Houdek <Sonicadvance1@gmail.com>
+Date: Tue, 27 Oct 2026 09:01:37 -0700
+Subject: [PATCH] FEXCore: Fixes two-byte instruction decode of 0xBX operations
+
+Depending on prefix encoding order these were selecting incorrect
+instructions or invalid instructions.
+We could probably clean up the two byte instruction tables a bit better
+but this is good enough.
+
+Fixes #6065
+
+(cherry picked from commit 68f4c5fbc48d4dc5c26b781b9f8b7aff8f7ab1d9)
+---
+ FEXCore/Source/Interface/Core/Frontend.cpp            | 11 ++++++-----
+ .../Interface/Core/X86Tables/SecondaryTables.cpp      |  6 +++---
+ FEXCore/Source/Interface/Core/X86Tables/X86Tables.h   |  4 +++-
+ 3 files changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/Frontend.cpp b/FEXCore/Source/Interface/Core/Frontend.cpp
+index d9f7af4..2bcb070 100644
+--- a/FEXCore/Source/Interface/Core/Frontend.cpp
++++ b/FEXCore/Source/Interface/Core/Frontend.cpp
+@@ -965,23 +965,24 @@ Decoder::DecodedBlockStatus Decoder::DecodeInstructionImpl(uint64_t PC) {
+           // If any of these three prefixes are used then it falls down the subtable
+           // Additionally: If you hit repeat of differnt prefixes then only the LAST one before this one works for subtable selection
+ 
+-          bool NoOverlay = (FEXCore::X86Tables::SecondBaseOps[EscapeOp].Flags & InstFlags::FLAGS_NO_OVERLAY) != 0;
+-          bool NoOverlay66 = (FEXCore::X86Tables::SecondBaseOps[EscapeOp].Flags & InstFlags::FLAGS_NO_OVERLAY66) != 0;
++          const bool NoOverlay = (FEXCore::X86Tables::SecondBaseOps[EscapeOp].Flags & InstFlags::FLAGS_NO_OVERLAY) != 0;
++          const bool NoOverlay66 = (FEXCore::X86Tables::SecondBaseOps[EscapeOp].Flags & InstFlags::FLAGS_NO_OVERLAY66) != 0;
++          const bool NoPrefixOrder = (FEXCore::X86Tables::SecondBaseOps[EscapeOp].Flags & InstFlags::FLAGS_NO_PREFIX_ORDER) != 0;
+ 
+           DecodeREXIfValid(-2);
+           if (NoOverlay) { // This section of the table ignores prefix extention
+             return NormalOpHeader(&FEXCore::X86Tables::SecondBaseOps[EscapeOp], EscapeOp);
+-          } else if (LastEscapePrefix == 0xF3) { // REP
++          } else if (LastEscapePrefix == 0xF3 || (NoPrefixOrder && DecodeInst->Flags & DecodeFlags::FLAG_REP_PREFIX)) { // REP
+             // Remove prefix so it doesn't effect calculations.
+             // This is only an escape prefix rather tan modifier now
+             DecodeInst->Flags &= ~DecodeFlags::FLAG_REP_PREFIX;
+             return NormalOpHeader(&FEXCore::X86Tables::RepModOps[EscapeOp], EscapeOp);
+-          } else if (LastEscapePrefix == 0xF2) { // REPNE
++          } else if (LastEscapePrefix == 0xF2 || (NoPrefixOrder && DecodeInst->Flags & DecodeFlags::FLAG_REPNE_PREFIX)) { // REPNE
+             // Remove prefix so it doesn't effect calculations.
+             // This is only an escape prefix rather tan modifier now
+             DecodeInst->Flags &= ~DecodeFlags::FLAG_REPNE_PREFIX;
+             return NormalOpHeader(&FEXCore::X86Tables::RepNEModOps[EscapeOp], EscapeOp);
+-          } else if (LastEscapePrefix == 0x66 && !NoOverlay66) { // Operand Size
++          } else if ((LastEscapePrefix == 0x66 || (NoPrefixOrder && DecodeInst->Flags & DecodeFlags::FLAG_OPERAND_SIZE)) && !NoOverlay66) { // Operand Size
+             // Remove prefix so it doesn't effect calculations.
+             // This is only an escape prefix rather tan modifier now
+             DecodeInst->Flags &= ~DecodeFlags::FLAG_OPERAND_SIZE;
+diff --git a/FEXCore/Source/Interface/Core/X86Tables/SecondaryTables.cpp b/FEXCore/Source/Interface/Core/X86Tables/SecondaryTables.cpp
+index a08c243..cd793be 100644
+--- a/FEXCore/Source/Interface/Core/X86Tables/SecondaryTables.cpp
++++ b/FEXCore/Source/Interface/Core/X86Tables/SecondaryTables.cpp
+@@ -226,12 +226,12 @@ constexpr std::array<X86InstInfo, MAX_SECOND_TABLE_SIZE> SecondBaseOps = []() co
+     {0xB5, 1, X86InstInfo{"LGS",     TYPE_INVALID, FLAGS_NO_OVERLAY,                                                                                0}},
+     {0xB6, 1, X86InstInfo{"MOVZX",   TYPE_INST, GenFlagsSrcSize(SIZE_8BIT) | FLAGS_MODRM | FLAGS_NO_OVERLAY,                                        0}},
+     {0xB7, 1, X86InstInfo{"MOVZX",   TYPE_INST, GenFlagsSrcSize(SIZE_16BIT) | FLAGS_MODRM | FLAGS_NO_OVERLAY,                                       0}},
+-    {0xB8, 1, X86InstInfo{"",        TYPE_INVALID, FLAGS_NONE,                                                                                      0}},
++    {0xB8, 1, X86InstInfo{"",        TYPE_INVALID, FLAGS_NO_PREFIX_ORDER,                                                                           0}},
+     {0xB9, 1, X86InstInfo{"",        TYPE_GROUP_10, FLAGS_NO_OVERLAY,                                                                               0}},
+     {0xBA, 1, X86InstInfo{"",        TYPE_GROUP_8, FLAGS_NO_OVERLAY,                                                                                0}},
+     {0xBB, 1, X86InstInfo{"BTC",     TYPE_INST, FLAGS_DEBUG_MEM_ACCESS | FLAGS_MODRM | FLAGS_SF_MOD_DST | FLAGS_NO_OVERLAY | FLAGS_SUPPORTS_LOCK,   0}},
+-    {0xBC, 1, X86InstInfo{"BSF",     TYPE_INST, FLAGS_MODRM | FLAGS_NO_OVERLAY66,                                                                   0}},
+-    {0xBD, 1, X86InstInfo{"BSR",     TYPE_INST, FLAGS_MODRM | FLAGS_NO_OVERLAY66,                                                                   0}},
++    {0xBC, 1, X86InstInfo{"BSF",     TYPE_INST, FLAGS_MODRM | FLAGS_NO_PREFIX_ORDER | FLAGS_NO_OVERLAY66,                                           0}},
++    {0xBD, 1, X86InstInfo{"BSR",     TYPE_INST, FLAGS_MODRM | FLAGS_NO_PREFIX_ORDER | FLAGS_NO_OVERLAY66,                                           0}},
+     {0xBE, 1, X86InstInfo{"MOVSX",   TYPE_INST, GenFlagsSrcSize(SIZE_8BIT) | FLAGS_MODRM | FLAGS_NO_OVERLAY,                                        0}},
+     {0xBF, 1, X86InstInfo{"MOVSX",   TYPE_INST, GenFlagsSrcSize(SIZE_16BIT) | FLAGS_MODRM | FLAGS_NO_OVERLAY,                                       0}},
+ 
+diff --git a/FEXCore/Source/Interface/Core/X86Tables/X86Tables.h b/FEXCore/Source/Interface/Core/X86Tables/X86Tables.h
+index 3010516..a00f46d 100644
+--- a/FEXCore/Source/Interface/Core/X86Tables/X86Tables.h
++++ b/FEXCore/Source/Interface/Core/X86Tables/X86Tables.h
+@@ -407,7 +407,9 @@ namespace InstFlags {
+   constexpr InstFlagType FLAGS_CALL = (1ULL << 30);
+   constexpr InstFlagType FLAGS_SUPPORTS_LOCK = (1ULL << 31);
+   constexpr InstFlagType FLAGS_LITERAL_PATCHABLE = (1ULL << 32);
+-  // Flags [57..33]: Undefined
++  constexpr InstFlagType FLAGS_NO_PREFIX_ORDER = (1ULL << 33);
++
++  // Flags [57..34]: Undefined
+   // Flags [60..58]: Dst size
+   constexpr InstFlagType FLAGS_SIZE_DST_OFF = 58;
+   // Flags [63..61]: Src size
+-- 
+2.39.5 (Apple Git-154)
+

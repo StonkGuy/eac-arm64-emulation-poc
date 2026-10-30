@@ -1,0 +1,141 @@
+From c519ef0fada2d873d175aba62ae0abf8c398b65d Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 16:24:26 +0200
+Subject: [PATCH] Frontend: instructions longer than 15 bytes raise #GP(0)
+
+An x86 instruction may be at most 15 bytes long; the CPU raises #GP(0)
+for a longer one instead of fetching its 16th byte. The decoder handled
+the limit three ways, none of them that: a 16th prefix was an invalid
+instruction (SIGILL), a 16th byte read through ReadByte was taken for an
+instruction fetch fault (a page fault at the end of the executable
+range), and a 16th byte of an immediate or displacement was not checked
+at all (the instruction executed). ReadByte could also write past the
+15-byte Instruction array once ReadData had skipped beyond it.
+
+The decoder now reports TOO_LONG_INST for all three, after a fetch fault
+on one of the first 15 bytes, which still takes priority, and the block
+raises #GP(0) like a privileged instruction. Matches native for all
+eac-tests/insn-toolong cases, including a 16th byte on a PROT_NONE page.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ FEXCore/Source/Interface/Core/Core.cpp     |  3 +++
+ FEXCore/Source/Interface/Core/Frontend.cpp | 28 ++++++++++++++++++----
+ FEXCore/Source/Interface/Core/Frontend.h   |  2 ++
+ 3 files changed, 29 insertions(+), 4 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+index cf8b146..36c476b 100644
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@ -725,6 +725,9 @@ ContextImpl::GenerateIR(FEXCore::Core::InternalThreadState* Thread, uint64_t Gue
+               Thread->OpDispatcher->InvalidOp(DecodedInfo);
+             } else if (Block.BlockStatus == Frontend::Decoder::DecodedBlockStatus::UNIMPLEMENTED_INST) {
+               Thread->OpDispatcher->UnimplementedOp(DecodedInfo);
++            } else if (Block.BlockStatus == Frontend::Decoder::DecodedBlockStatus::TOO_LONG_INST) {
++              // Longer than 15 bytes: #GP(0), the same exception as a privileged instruction.
++              Thread->OpDispatcher->PermissionRestrictedOp(DecodedInfo);
+             } else {
+               Thread->OpDispatcher->NoExecOp(DecodedInfo);
+             }
+diff --git a/FEXCore/Source/Interface/Core/Frontend.cpp b/FEXCore/Source/Interface/Core/Frontend.cpp
+index 6667f16..f21d0a1 100644
+--- a/FEXCore/Source/Interface/Core/Frontend.cpp
++++ b/FEXCore/Source/Interface/Core/Frontend.cpp
+@@ -121,8 +121,14 @@ bool Decoder::CheckRangeExecutable(uint64_t Address, uint64_t Size) {
+ }
+ 
+ uint8_t Decoder::ReadByte() {
++  if (InstructionSize >= MAX_INST_SIZE) {
++    // The CPU raises #GP(0) instead of fetching a 16th byte.
++    HitInstructionLengthLimit = true;
++    return 0;
++  }
++
+   std::optional<uint8_t> Byte = PeekByte(0);
+-  if (!Byte || InstructionSize == MAX_INST_SIZE) {
++  if (!Byte) {
+     HitNonExecutableRange = true;
+     // Pretend we read 0, the main decode loop will see HitNonExecutableRange and rollback the instruction.
+     return 0;
+@@ -149,7 +155,14 @@ std::pair<uint64_t, bool> Decoder::ReadData(uint8_t Size) {
+   uint64_t Address = reinterpret_cast<uint64_t>(InstStream.InstStream + InstructionSize);
+   LastFieldReadOffset = (uint8_t)InstructionSize;
+   LastFieldReadSize = Size;
+-  if (CheckRangeExecutable(Address, Size)) {
++  if (InstructionSize + Size > MAX_INST_SIZE) [[unlikely]] {
++    // The field ends past the 15th byte: #GP(0), unless fetching the bytes up to the 15th faults first.
++    if (InstructionSize < MAX_INST_SIZE && !CheckRangeExecutable(Address, MAX_INST_SIZE - InstructionSize)) {
++      HitNonExecutableRange = true;
++    }
++    HitInstructionLengthLimit = true;
++    Res = 0;
++  } else if (CheckRangeExecutable(Address, Size)) {
+     std::memcpy(&Res, &InstStream.AdjustedInstStream[InstructionSize], Size);
+   } else {
+     HitNonExecutableRange = true;
+@@ -857,7 +870,7 @@ Decoder::DecodedBlockStatus Decoder::DecodeInstructionImpl(uint64_t PC) {
+ 
+   for (;;) {
+     if (InstructionSize >= MAX_INST_SIZE) {
+-      return DecodedBlockStatus::INVALID_INST;
++      return DecodedBlockStatus::TOO_LONG_INST;
+     }
+     uint8_t Op = ReadByte();
+     switch (Op) {
+@@ -1083,10 +1096,11 @@ void Decoder::DecodeREXIfValid(int8_t ExpectedOffset) {
+ Decoder::DecodedBlockStatus Decoder::DecodeInstruction(uint64_t PC) {
+   // Will be set if DecodeInstructionImpl tries to read non-executable memory
+   HitNonExecutableRange = false;
++  HitInstructionLengthLimit = false;
+   HitBadRelocation = false;
+   auto ErrorDuringDecoding = DecodeInstructionImpl(PC);
+ 
+-  if (ErrorDuringDecoding != DecodedBlockStatus::SUCCESS || HitNonExecutableRange || HitBadRelocation) [[unlikely]] {
++  if (ErrorDuringDecoding != DecodedBlockStatus::SUCCESS || HitNonExecutableRange || HitInstructionLengthLimit || HitBadRelocation) [[unlikely]] {
+     // Put an invalid instruction in the stream so the core can raise SIGILL if hit
+     // Error while decoding instruction. We don't know the table or instruction size
+     const auto InstSize = DecodeInst->InstSize;
+@@ -1103,6 +1117,11 @@ Decoder::DecodedBlockStatus Decoder::DecodeInstruction(uint64_t PC) {
+       return DecodedBlockStatus::BAD_RELOCATION;
+     }
+ 
++    // Likewise a decode error after reading zero for a byte past the 15th.
++    if (HitInstructionLengthLimit) {
++      return DecodedBlockStatus::TOO_LONG_INST;
++    }
++
+     return ErrorDuringDecoding;
+   } else if (!DecodeInst->TableInfo || (DecodeInst->TableInfo->Type == TYPE_INST && !DecodeInst->TableInfo->OpcodeDispatcher.OpDispatch)) {
+     // If there wasn't an error during decoding but we have no dispatcher for the instruction then claim invalid instruction.
+@@ -1658,6 +1677,7 @@ void Decoder::DecodeLoop(const uint8_t* _InstStream, uint64_t GuestSizePause) {
+           LogMan::Msg::EFmt("{} instruction in entry block: {:X}",
+                             BlockIt->BlockStatus == DecodedBlockStatus::INVALID_INST       ? "Invalid" :
+                             BlockIt->BlockStatus == DecodedBlockStatus::NOEXEC_INST        ? "NoExec" :
++                            BlockIt->BlockStatus == DecodedBlockStatus::TOO_LONG_INST      ? "TooLong" :
+                             BlockIt->BlockStatus == DecodedBlockStatus::BAD_RELOCATION     ? "BadRelocation" :
+                             BlockIt->BlockStatus == DecodedBlockStatus::UNIMPLEMENTED_INST ? "Unimplemented" :
+                                                                                              "PartialDecode",
+diff --git a/FEXCore/Source/Interface/Core/Frontend.h b/FEXCore/Source/Interface/Core/Frontend.h
+index e62948e..1a29ad5 100644
+--- a/FEXCore/Source/Interface/Core/Frontend.h
++++ b/FEXCore/Source/Interface/Core/Frontend.h
+@@ -28,6 +28,7 @@ public:
+     INVALID_INST,
+     NOEXEC_INST,
+     PARTIAL_DECODE_INST,
++    TOO_LONG_INST,
+     BAD_RELOCATION,
+     UNIMPLEMENTED_INST,
+   };
+@@ -154,6 +155,7 @@ private:
+   uint64_t ExecutableRangeEnd {};
+   bool ExecutableRangeWritable {};
+   bool HitNonExecutableRange {};
++  bool HitInstructionLengthLimit {};
+   bool HitBadRelocation {};
+ 
+   struct DecodeStream {
+-- 
+2.39.5 (Apple Git-154)
+

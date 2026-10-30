@@ -1,0 +1,28 @@
+From fa3813e41aba933dc41974e2a54cecf9e34aca32 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 15:27:17 +0200
+Subject: [PATCH] DiskCache: revision 2 for MOV to and from FS/GS in 64-bit
+ mode
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ FEXCore/Source/Interface/Core/DiskCache.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/FEXCore/Source/Interface/Core/DiskCache.h b/FEXCore/Source/Interface/Core/DiskCache.h
+index c3c54c4..fe217ff 100644
+--- a/FEXCore/Source/Interface/Core/DiskCache.h
++++ b/FEXCore/Source/Interface/Core/DiskCache.h
+@@ -255,7 +255,8 @@ namespace DiskCache {
+   // change that alters codegen; reset it to 1 on a rebase onto a new upstream version.
+   // Revision 1: everything on eac-2610 up to here (POPF flags, IRET NT #GP, ...), which kept upstream's 30, so a
+   // cache filled by one fork build was reused by the next.
+-  static constexpr uint16_t FormatVersion = 0x8000 | (1 << 8) | 30;
++  // Revision 2: MOV to and from FS/GS in 64-bit mode.
++  static constexpr uint16_t FormatVersion = 0x8000 | (2 << 8) | 30;
+ 
+   static constexpr uint32_t LOOKUP_KEY_MAX_BUCKET_DEPTH = 500;
+ 
+-- 
+2.39.5 (Apple Git-154)
+

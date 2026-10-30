@@ -1,0 +1,64 @@
+From 59c6631d48cb4e417c7095e993db48cef91c61ff Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 02:01:40 +0200
+Subject: [PATCH] FEXCore: IRET with RFLAGS.NT = 1 raises #GP
+
+In IA-32e mode IRET with NT = 1 raises #GP(0) before it pops anything (Intel SDM, IRET). FEX executed it as a normal
+IRET. User mode can set NT with POPF, and anti-tamper code checks for this fault (THE FINALS and ARC Raiders only run
+under another translator once its NT handling is exact). IRETOp now branches on NT first and raises the fault like a
+real kernel delivers it: SIGSEGV, si_code SI_KERNEL, trapno 13, error code 0, RIP at the IRET, frame still on the
+stack (the fault block of CPUIDOp). Cost: one test of the NT flag per IRET.
+
+Upstream state (FEX main, October 2026): IRETOp does not check NT.
+
+Test: eac-tests/iret-nt check 3.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../Interface/Core/OpcodeDispatcher.cpp       | 30 +++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
+index 731f912..0dac7aa 100644
+--- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
++++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
+@@ -138,6 +138,36 @@ void OpDispatchBuilder::IRETOp(OpcodeArgs) {
+ 
+   const auto GPRSize = GetGPROpSize();
+ 
++  // IRET with RFLAGS.NT = 1 in IA-32e mode (64-bit and compatibility mode alike) raises #GP(0) before it pops anything
++  // (Intel SDM, IRET). User mode sets NT with POPF, and anti-tamper code checks for this fault to tell hardware from a
++  // translator. A real kernel delivers it as SIGSEGV with si_code SI_KERNEL and the IRET's RIP, like CPUIDOp's fault.
++  {
++    auto FaultBlock = CreateNewCodeBlockAfter(GetCurrentBlock());
++    auto ContinueBlock = CreateNewCodeBlockAfter(FaultBlock);
++
++    // NT == 0: the normal IRET. Non-zero: the #GP block.
++    auto CondJump_ = CondJump(GetRFLAG(FEXCore::X86State::RFLAG_NT_LOC), CondClass::EQ);
++    SetTrueJumpTarget(CondJump_, ContinueBlock);
++    SetFalseJumpTarget(CondJump_, FaultBlock);
++
++    SetCurrentCodeBlock(FaultBlock);
++    StartNewBlock();
++
++    // The #GP is a fault, so RIP points at the IRET itself, with its frame still on the stack.
++    _StoreContextGPR(GPRSize, GetRelocatedPC(Op, -Op->InstSize), offsetof(FEXCore::Core::CPUState, rip));
++
++    IR::BreakDefinition Reason {};
++    Reason.ErrorRegister = 0;
++    Reason.Signal = Core::FAULT_SIGSEGV;
++    Reason.TrapNumber = X86State::X86_TRAPNO_GP;
++    Reason.si_code = 0x80; // SI_KERNEL
++    BlockSetRIP = true;
++    Break(Reason);
++
++    SetCurrentCodeBlock(ContinueBlock);
++    StartNewBlock();
++  }
++
+   Ref SP = _RMWHandle(LoadGPRRegister(X86State::REG_RSP));
+ 
+   // RIP (64/32/16 bits)
+-- 
+2.39.5 (Apple Git-154)
+

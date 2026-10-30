@@ -1,12 +1,12 @@
 # The patch series
 
-Forty-four patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
+Sixty-one patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
 (`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610; 0022–0026 on top of 0001–0020
-(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026, and 0036–0039 and 0041–0053 (group H) in `eac-2610.3`. They are not all the same kind of thing, so they are
+(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026, 0036–0039 and 0041–0053 (group H) in `eac-2610.3`, and 0054–0070 (group I) in `eac-2610.4`. They are not all the same kind of thing, so they are
 grouped here by what they are for.
 
 **Where the code lives.** Each patch is one commit on branch `eac-2610` of [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) (release tag
-`eac-2610.3`), and every test named below is in that branch's
+`eac-2610.4`), and every test named below is in that branch's
 [`eac-tests/`](https://github.com/StonkGuy/FEX/tree/eac-2610/eac-tests). `patches/` here is a generated snapshot of
 those commits; send changes to the fork.
 
@@ -366,6 +366,28 @@ are held (no consumer yet) and are not in the release.
 
 **Cost.** 0048 adds one branch per syscall; 0045 one compare and one VMA lookup per affected syscall when SMC tracking
 is on; the others act only on their own path (traps, faults, exec, exit).
+
+## I. Fixes since `eac-2610.3` — patches 0054–0070
+
+Added in `eac-2610.4`, each through a pull request on the fork with its test. Most were found on THE FINALS, whose
+anti-tamper code probes exceptions a real CPU raises; 0070 on Hell Let Loose. Three commits only bump the fork's
+DiskCache format revision for a codegen change (0057, 0062, 0068) and three update the instruction-count CI after one
+(0058, 0063, 0069); they belong to the row of the change that needed them.
+
+| patch | behaviour | stock FEX | patched | test |
+|---|---|---|---|---|
+| 0054 | IRETQ with RFLAGS.NT = 1 raises #GP(0) before it pops anything | executed as a normal IRETQ | SIGSEGV, `SI_KERNEL`, trapno 13, frame intact | `eac-tests/iret-nt`, `eac-tests/wine-ntflag` |
+| 0055, 0057 | MOV to FS/GS in 64-bit mode is a data segment load against Linux's GDT | refused as undecodable (Wine: illegal instruction) | null or user selectors load with base 0; others #GP with the selector as error code | `eac-tests/seg-load64` |
+| 0056, 0058 | the disk cache key carries a format version of the fork's own (`0x8000 \| revision << 8 \| upstream`) | upstream's version 30: a cache filled by one build was reused by the next, so blocks translated before a fix kept running | each codegen change bumps the revision (now `0x841E`) | InstCountCI |
+| 0059 | an instruction that runs from executable memory into memory that is not reports the end of the executable range as its fetch fault address | RIP reported as `si_addr` | first byte it could not fetch, RIP at the instruction | `eac-tests/insn-straddle` |
+| 0060–0063 | instructions longer than 15 bytes, and XSETBV in user mode, raise #GP(0) | SIGILL, a fetch fault, or (immediate/displacement) executed; XSETBV SIGILL with trapno 0 (Wine: "unexpected trap 0") | #GP(0) as a CPU raises it | `eac-tests/insn-toolong` |
+| 0064 | a fetch fault takes the range end as its address only when it lies within 15 bytes of RIP | after another thread made the page executable, an address no instruction at RIP can reach (THE FINALS decrypts code pages on execute faults from several threads; Unreal crashed) | otherwise the instruction's first byte faulted, as on hardware | `eac-tests/insn-straddle` |
+| 0065 | guest code is read fault-safely while compiling | a read-ahead fault on a page another thread revoked reached the guest handler with the compiler's frames below it, leaking a code-invalidation lock hold (THE FINALS froze in a match) | the decode stops at the unreadable byte | `eac-tests/decode-race` |
+| 0066–0069 | two-byte `0F B8/BC/BD` decode with F2/F3/66 prefixes in any order (backport of upstream 68f4c5fbc and its test 95a305bc4) | `F3 66 0F B8` SIGILL, `F3 66 0F BC/BD` as BSF/BSR | POPCNT / TZCNT / LZCNT | `unittests/ASM/FEX_bugs/two_byte_0xbx` |
+| 0070 | a store that faults on a page with translated code restarts its instruction only when it can reach the running block (64 bytes around the fault address) | every data store next to running code restarted the instruction from mid-instruction state: `adc`/`rcl`/`rcr` reused the CF they produced, `pop` to memory and `fstp` popped twice (Hell Let Loose: EAC `210 (#2)`) | the store completes; stores into the block still restart | `eac-tests/smc-restart-state` |
+
+**Cost.** 0054 one flag test per IRETQ; 0055 only on MOV to FS/GS; 0060 a length check in the decoder; the others act
+only on their own path (faults, decode of unreadable bytes, SMC write faults).
 
 **Verified by.** Each test passes natively on x86-64 (GitHub runners) and under the patched FEX. In the SteamOS guest
 on the release code: `eac-tests/run-all.sh` 33/33 expected (the `eac-2610.2`-era build gave 30/31), `sigsys-redirect`

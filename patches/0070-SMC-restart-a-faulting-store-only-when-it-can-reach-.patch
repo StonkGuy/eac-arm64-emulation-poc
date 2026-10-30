@@ -1,0 +1,76 @@
+From 37fe722d7b6a971481a9744c049f45283dc04494 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 23:17:10 +0200
+Subject: [PATCH] SMC: restart a faulting store only when it can reach the
+ running block
+
+Under SMCChecks=mtrack a guest store to a page with translated code faults.
+HandleSegfault invalidates the page and, when the store could hit the block
+that is executing, re-runs the storing instruction as a single-instruction
+block so that a change to the block's own code is picked up at once.
+
+The restart starts from the host state at the fault (SpillSRA), which is in the
+middle of the instruction when the instruction updates registers or flags
+before its store: for adc/rcl/rcr to memory NZCV already holds the new CF, a
+pop to memory has already moved RSP, an x87 store-and-pop has already moved
+TOP. The re-run then consumes the CF it produced or pops a second time. The
+check used the whole page of the fault, so every store to data next to the
+running code took this path, although such a store cannot change the block's
+code.
+
+The check now uses a window of 64 bytes on either side of the faulting address
+(the largest single guest store FEX emits). Stores into the block, or close
+enough to reach it, still restart as before; stores to data elsewhere on the
+page return to the store, which completes now that the page is writable, and
+the block runs on (its translation is already invalidated, so the next entry
+translates the page again). The common path is unchanged: this only runs in
+the SIGSEGV handler of an SMC write fault.
+
+Consumer: Hell Let Loose's EAC client decrypts itself and keeps its keys and
+counters on the pages of the code that uses them. 20 to 30 of these writes per
+client init took the restart; one of them left a wrong value, the client called
+memset on a bad address and the launcher stopped with 210 (#2). With the
+narrow check it reaches 301 and plays online (reported in StonkGuy/FEX#35,
+which also found the root cause).
+
+Limits: a store that does hit the running block still restarts from the
+mid-instruction state (no consumer known). An instruction with many stores
+(REP MOVS/STOS, FXSAVE, XSAVE) whose first faulting store is more than 64 bytes
+from the block and that later writes into the block's code runs the rest of
+the block's old translation once; the next entry runs the new code.
+
+Test: eac-tests/smc-restart-state. Before: adc, rcl, rcr, pop and fstp give
+wrong results (31-32 of 1000 with the default, every iteration with
+FEX_SMCHOTPAGEFAULTS=0); after: PASS in both modes, as natively. smc-same-page
+unchanged (PASS), ASM 7551/7551, InstCountCI 108/108.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+index dbbf279..6d1b97a 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+@@ -135,9 +135,16 @@ bool SyscallHandler::HandleSegfault(FEXCore::Core::InternalThreadState* Thread,
+ 
+     FEXCORE_PROFILE_INSTANT_INCREMENT(Thread, AccumulatedSMCCount, 1);
+ 
++    // The restart below re-runs the faulting instruction from the host state at the fault, which is in the middle of
++    // the instruction: its flags, RSP/RSI/RDI or the x87 top may already be updated. So it is only taken when the
++    // store can reach the executing block's code, not for data that merely shares a page with it (self-decrypting code
++    // keeps its keys and counters there). A single guest store writes at most 64 bytes around the faulting address.
++    constexpr uint64_t MaxStoreSize = 64;
++    const uint64_t StoreWindowStart = FaultAddress > MaxStoreSize ? FaultAddress - MaxStoreSize : 0;
++
+     auto CTX = Thread->CTX;
+     if (CTX->IsAddressInCodeBuffer(Thread, ArchHelpers::Context::GetPc(ucontext)) && !CTX->IsCurrentBlockSingleInst(Thread) &&
+-        CTX->IsAddressInCurrentBlock(Thread, FaultAddress & FEXCore::Utils::FEX_PAGE_MASK, FEXCore::Utils::FEX_PAGE_SIZE)) {
++        CTX->IsAddressInCurrentBlock(Thread, StoreWindowStart, 2 * MaxStoreSize)) {
+       // If we are not in a single-instruction block, and the SMC write address could intersect with the current block,
+       // reconstruct the context and repeat the faulting instruction as a single-instruction block so any SMC it performs
+       // is immediately picked up.
+-- 
+2.39.5 (Apple Git-154)
+

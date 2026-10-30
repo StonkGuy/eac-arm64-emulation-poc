@@ -1,0 +1,31 @@
+From bb0baf9555de4318e150b0a5fb3d94d472298c58 Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 07:53:23 +0200
+Subject: [PATCH] DiskCache: fork format revision 4
+
+The 0F B8/BC/BD prefix-order fix (upstream 68f4c5fbc) changes the code generated for
+POPCNT, TZCNT and LZCNT written with 66 after F3 (and BSF/BSR forms), which a cache
+filled by an earlier fork build would keep running.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ FEXCore/Source/Interface/Core/DiskCache.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/FEXCore/Source/Interface/Core/DiskCache.h b/FEXCore/Source/Interface/Core/DiskCache.h
+index 07911c3..b4b91a3 100644
+--- a/FEXCore/Source/Interface/Core/DiskCache.h
++++ b/FEXCore/Source/Interface/Core/DiskCache.h
+@@ -257,7 +257,8 @@ namespace DiskCache {
+   // cache filled by one fork build was reused by the next.
+   // Revision 2: MOV to and from FS/GS in 64-bit mode.
+   // Revision 3: instructions longer than 15 bytes and XSETBV raise #GP(0).
+-  static constexpr uint16_t FormatVersion = 0x8000 | (3 << 8) | 30;
++  // Revision 4: two-byte 0F B8/BC/BD decode with F2/F3/66 in any order (upstream 68f4c5fbc).
++  static constexpr uint16_t FormatVersion = 0x8000 | (4 << 8) | 30;
+ 
+   static constexpr uint32_t LOOKUP_KEY_MAX_BUCKET_DEPTH = 500;
+ 
+-- 
+2.39.5 (Apple Git-154)
+
