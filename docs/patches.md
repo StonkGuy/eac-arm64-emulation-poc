@@ -326,8 +326,8 @@ anything on the common path.
 
 **Without them:** the bootstrapper's first thread spins forever in FEX's fault handler (0023), its single-step check
 fails and it writes a crash dump (0025), and a seccomp-heavy Wine thread dies of host-stack exhaustion (0022). With
-0022–0026 the title gets past its bootstrapper and starts its anti-cheat runtime; it then stops inside the anti-cheat's
-own integrity checks, which this project does not work on.
+0022–0026 the title gets past its bootstrapper and starts its anti-cheat runtime; it then stopped at exceptions its
+anti-tamper code probes, which group I (0054–0070) raises like a CPU. With both groups the title plays.
 
 **Cost.** 0022 is per-trap work only, 0023 per host fault inside the shadow-stack allocation, 0025 only on `iretq` and on
 blocks compiled while TF is set, 0026 only on thread exit.

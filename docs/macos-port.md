@@ -93,19 +93,21 @@ the 16 GB host) is a secondary contributor; the CPU is not the limiter (the emul
 
 ## THE FINALS
 
-THE FINALS (Steam 2073850, a UE5 title) does not reach gameplay on this setup. It stops before the game's own
-renderer starts, inside the title's own anti-tamper. This is a record of where it stops, not a supported configuration.
+THE FINALS (Steam 2073850, a UE5 title) reaches its main menu and plays matches on this setup with `eac-2610.4`, on the
+steamac fork's DXMT graphics path. Its protection is **Embark Theia** (user-mode, in-process) together with **Denuvo
+Anti-Cheat**; the install has no Easy Anti-Cheat.
 
-* The anti-tamper is **Embark Theia** (user-mode, in-process; the title's launcher executable carries the Theia runtime)
-  together with **Denuvo Anti-Cheat**. The install has no Easy Anti-Cheat, so EAC is not what blocks this title.
-* The bootstrapper spawns the game child, which runs Denuvo/Theia code and then loops in its own memory scan. The
-  parent waits on the child indefinitely, and the game never loads a graphics module.
-* **The same stop happens on stock Proton Experimental** (11.0-20261001) with the stock Wine `ntdll.so`. It is therefore not caused by FEX or by the patches in this repository.
-* Neither Wine's `sigsys_handler` (its `+0xb` arithmetic is correct for the trapped NT trampolines) nor FEX's `NoExec`
-  on the DRM preloader causes the stop: with that section made executable, the stop moves to the Theia trap.
-
-FEX's seccomp/SIGSYS path (patch 0010) and signal-frame validation (patch 0019) are faithful and covered by
-`eac-tests/seccomp-trap` and `eac-tests/signal-frame`, but they do not get this title past its anti-tamper.
+* What it needed from FEX is group I of [patches.md](patches.md) (0054–0070): its anti-tamper code probes exceptions
+  that stock FEX did not raise like a CPU (IRETQ with NT set, MOV to FS/GS, instructions over 15 bytes, XSETBV, the
+  address of a fetch fault), and a freeze in matches came from FEX's decoder reading guest code that the protection had
+  just re-protected (0065).
+* Launch options: `FEX_NEEDSSECCOMP=1 %command%` (a stock FEX option; Wine installs a seccomp filter for the title's
+  syscall traps).
+* Graphics: the DXMT path in a VM window. On the Vulkan (DXVK) path one run lost the device about 95 s into the game.
+* Keep Wine logging light: channels such as `+seh` or `+sync` slow the protection's own code past its watchdog, which
+  looks like a stall.
+* Steam's idle screensaver took focus from the game a few minutes after launch, about when the menu appears, so menu
+  clicks went to Steam. The steamac fork turns it off (see below).
 
 ## Known issues and where they are handled
 
@@ -118,13 +120,13 @@ not in this repository ([fork notes](https://github.com/StonkGuy/steamac/blob/fe
 | microphone start can freeze the guest: steamac's CoreAudio virtio-snd backend starts capture synchronously under a shared lock; over 1 s gives a guest `virtio_snd` control-message time-out, PipeWire is killed and the game freezes. Without macOS microphone permission the capture stream floods the log instead | kernel parameter `virtio_snd.msg_timeout_ms=10000` (workaround) and libkrun patch 0017 (asynchronous capture start); re-verified |
 | launcher present path and input | triple-buffered present, lower default log level, Metal HUD library loaded only when needed, direct-to-display presentation, key releases never dropped, HID off the main thread, Retina EDID DPI, a render-scale control (`--render-scale`, default off), plus the audit's stall/pad-port/`framebufferOnly`/Clipboard fixes — all built and re-verified (adversarial repros pass) |
 | full-frame scanout copy per present | libkrun patch 0018 (copy only the damage owed to each frame); re-verified (0/256 trials stale) |
+| Steam's idle screensaver: Steam does not count mouse and keyboard input routed to a game, so after its idle timeout its screensaver takes focus from the game and clicks go to Steam | guest `steam-idle-screensaver` turns it off once per Steam installation (a screensaver chosen later in Steam's settings stays); verified live with THE FINALS |
 
 A code audit of steamac 1.8.2 also confirmed upstream issues this fork does not fix (kept out of the published bundle).
 
 ## Not tested
 
-* Only VRChat, only an M2 MacBook Air, only macOS 27.0, three sessions. THE FINALS was run read-only and does not
-  start (above).
+* Only VRChat and THE FINALS, only an M2 MacBook Air, only macOS 27.0.
 * Steam Frame hardware. The Mac guest is the Steam Frame OS image with the same Steam FEX compatibility-tool
   mechanism, so the same swap is expected to apply there; this is unverified ([other-platforms.md](other-platforms.md)).
 
