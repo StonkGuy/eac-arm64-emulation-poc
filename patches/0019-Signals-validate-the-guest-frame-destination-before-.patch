@@ -185,6 +185,3 @@ index f51940f..deba62c 100644
    FEXCore::x86_64::ucontext_t* guest_uctx = reinterpret_cast<FEXCore::x86_64::ucontext_t*>(UContextLocation);
    siginfo_t* guest_siginfo = reinterpret_cast<siginfo_t*>(SigInfoLocation);
    // Store where the host context lives in the guest stack.
--- 
-2.39.5 (Apple Git-154)
-

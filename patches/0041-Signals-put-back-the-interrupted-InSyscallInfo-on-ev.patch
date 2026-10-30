@@ -152,6 +152,3 @@ index 0000000..7a6b292
 +  CHECK(SignalsSeen.load() > 0);
 +  REQUIRE(Corrupted.load() == 0);
 +}
--- 
-2.39.5 (Apple Git-154)
-

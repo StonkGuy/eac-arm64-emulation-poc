@@ -284,6 +284,3 @@ index 94bdd37..342223c 100644
      auto lk = FEXCore::GuardSignalDeferringSection<std::shared_lock>(VMATracking.Mutex, Thread);
  
      // Find the first mapping at or after the range ends, or ::end().
--- 
-2.39.5 (Apple Git-154)
-

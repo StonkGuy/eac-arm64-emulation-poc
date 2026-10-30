@@ -135,6 +135,3 @@ index 9645e24..5bd0f83 100644
        const uint32_t Idx = Count.fetch_add(1, std::memory_order_relaxed);
        if (Records && Idx < MaxSamples) {
          Records[Idx] = {ArchHelpers::Context::GetPc(UContext),
--- 
-2.39.5 (Apple Git-154)
-

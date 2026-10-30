@@ -51,6 +51,3 @@ index 207c33b..96d0c99 100644
        if (NeedsFDCopy) {
          // FEX needs the FD to live past execve when binfmt_misc isn't used,
          // so duplicate the FD if FD_CLOEXEC is set, which removes the FD_CLOEXEC flag.
--- 
-2.39.5 (Apple Git-154)
-

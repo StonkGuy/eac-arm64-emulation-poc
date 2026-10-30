@@ -152,6 +152,3 @@ index fca0ff2..b98ef4b 100644
    static int32_t ProcStatus(FEXCore::Context::Context* ctx, int32_t fd, const char* pathname, int32_t flags, mode_t mode);
    const uint32_t ThreadsConfig;
  };
--- 
-2.39.5 (Apple Git-154)
-

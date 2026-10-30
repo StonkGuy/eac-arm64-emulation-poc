@@ -1,12 +1,12 @@
 # The patch series
 
-Sixty-one patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
+Sixty-two patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
 (`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610; 0022–0026 on top of 0001–0020
-(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026, 0036–0039 and 0041–0053 (group H) in `eac-2610.3`, and 0054–0070 (group I) in `eac-2610.4`. They are not all the same kind of thing, so they are
+(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026, 0036–0039 and 0041–0053 (group H) in `eac-2610.3`, 0054–0070 (group I) in `eac-2610.4`, and 0071 (group J) in `eac-2610.5`. They are not all the same kind of thing, so they are
 grouped here by what they are for.
 
 **Where the code lives.** Each patch is one commit on branch `eac-2610` of [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) (release tag
-`eac-2610.4`), and every test named below is in that branch's
+`eac-2610.5`), and every test named below is in that branch's
 [`eac-tests/`](https://github.com/StonkGuy/FEX/tree/eac-2610/eac-tests). `patches/` here is a generated snapshot of
 those commits; send changes to the fork.
 
@@ -22,6 +22,8 @@ The groups:
 | **F. Signal frames and faults** | 0016–0020 | what Windows exception handling under Wine reads from and writes to a signal frame |
 | **G. Second title** | 0022–0026 | what a second title's anti-tamper bootstrapper (THE FINALS) observes: host stack per SIGSYS trap, faults on FEX's own mappings, single-step after `iretq`, a thread exiting on its signal stack |
 | **H. Fixes since `eac-2610.2`** | 0036–0039, 0041–0053 | trap, signal, exec and SMC paths that Wine 11, the EAC launcher or a test observed differently from Linux |
+| **I. Fixes since `eac-2610.3`** | 0054–0070 | exceptions THE FINALS' anti-tamper code probes, fault-safe guest code reads, the fork's disk-cache version, a decode backport, SMC restarts |
+| **J. Fixes since `eac-2610.4`** | 0071 | Proton Experimental 11.0-20261027b's retry of EAC's native syscalls under Syscall User Dispatch |
 
 Patches 0001–0010 are needed for the game (0001 to inject at all, 0002 so the injected client finishes loading, 0007 to
 avoid the disconnects, 0010 for the seccomp/SIGSYS path; 0008 is a correctness fix in the same area and 0004 is
@@ -392,6 +394,25 @@ only on their own path (faults, decode of unreadable bytes, SMC write faults).
 **Verified by.** Each test passes natively on x86-64 (GitHub runners) and under the patched FEX. In the SteamOS guest
 on the release code: `eac-tests/run-all.sh` 33/33 expected (the `eac-2610.2`-era build gave 30/31), `sigsys-redirect`
 30/30 runs, and VRChat with EAC (flat, Proton Experimental) joined a world with EAC Session Begin on 3 launches (two stayed 10 min, one 2 min); one more launch hit the intermittent world-load freeze that the `eac-2610.2`-era build shows as well (not FEX-specific).
+
+## J. Fixes since `eac-2610.4` — patch 0071
+
+Added in `eac-2610.5` through a pull request on the fork with its test. Proton Experimental 11.0-20261027b (Valve
+Wine, "HACK: Allow native syscalls for EAC") sets `WINE_HACK_NATIVE_SYSCALLS=1` for `start_protected_game.exe`. EAC's
+bootstrapper then makes raw Linux syscalls from its own code at `0x7001'0000'0000`; each one traps under Syscall User
+Dispatch, and Wine's `sigsys_handler` re-arms the dispatch range from inside the handler and retries the syscall by
+moving `rip` back by 2.
+
+| patch | behaviour | stock FEX | patched | test |
+|---|---|---|---|---|
+| 0071 | `rt_sigreturn` of a seccomp or Syscall User Dispatch trap frame always resumes the guest from the frame | a handler that moved `rip` back onto the trapped `syscall` made the frame look unchanged, and FEX resumed the abandoned syscall handler: EAC's bootstrapper died (illegal instruction at the `syscall`), so EAC games exited within seconds on that Proton | the retried `syscall` runs as the Linux syscall Wine re-allowed | `eac-tests/sud-native-retry` |
+
+**Cost.** One more condition on the `rt_sigreturn` path of a trap frame; nothing elsewhere.
+
+**Verified by.** The test passes natively on x86-64 (GitHub runner) and under the patched FEX, and crashes at the first
+retry on `eac-2610.4`. ASM 7551/7551 and InstCountCI 108/108 on a GitHub Arm64 runner; `eac-tests/run-all.sh` as
+expected in the SteamOS guest. Live: VRChat with EAC on Proton Experimental 11.0-20261027b, "AntiCheat Session Begin:
+Success" and in a world (on `eac-2610.4` it exited after 12 s).
 
 ---
 

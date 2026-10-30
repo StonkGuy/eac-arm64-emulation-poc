@@ -38,6 +38,3 @@ index 2c3edee..f0d267b 100644
  
    REGISTER_SYSCALL_IMPL(rseq, [](FEXCore::Core::CpuStateFrame* Frame, struct rseq* rseq, uint32_t rseq_len, int flags, uint32_t sig) -> uint64_t {
      // We don't support this
--- 
-2.39.5 (Apple Git-154)
-

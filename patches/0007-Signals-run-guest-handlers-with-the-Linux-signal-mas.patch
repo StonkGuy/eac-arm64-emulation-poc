@@ -474,6 +474,3 @@ index d1ab9cd..84c6129 100644
      if (Result != -1 && event) {
        FaultSafeUserMemAccess::VerifyIsWritable(event, sizeof(FEX::HLE::epoll_event_x86));
        *event = Event;
--- 
-2.39.5 (Apple Git-154)
-

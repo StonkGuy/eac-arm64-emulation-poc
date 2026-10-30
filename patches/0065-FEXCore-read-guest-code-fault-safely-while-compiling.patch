@@ -321,6 +321,3 @@ index 9af89be..940264d 100644
  #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED && defined(ARCHITECTURE_arm64)
    IsMemcpyFault |= reinterpret_cast<void*>(PC) == UserReadable_FaultLocation;
    IsMemcpyFault |= reinterpret_cast<void*>(PC) == UserWritable_FaultLocation;
--- 
-2.39.5 (Apple Git-154)
-

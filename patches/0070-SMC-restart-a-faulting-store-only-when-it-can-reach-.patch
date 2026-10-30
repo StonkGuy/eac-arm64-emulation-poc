@@ -71,6 +71,3 @@ index dbbf279..6d1b97a 100644
        // If we are not in a single-instruction block, and the SMC write address could intersect with the current block,
        // reconstruct the context and repeat the faulting instruction as a single-instruction block so any SMC it performs
        // is immediately picked up.
--- 
-2.39.5 (Apple Git-154)
-

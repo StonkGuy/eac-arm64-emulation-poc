@@ -53,6 +53,3 @@ index 0000000..3590fb0
 +db 0xf3, 0x66, 0x0f, 0xbd, 0xe0 ; lzcnt sp, ax
 +
 +hlt
--- 
-2.39.5 (Apple Git-154)
-

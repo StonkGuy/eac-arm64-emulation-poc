@@ -11,7 +11,8 @@ eval "$(grep -E '^(FEX_REPO|FEX_EAC_TAG|FEX_EAC_SHA)=' "$REPO/scripts/build-fex.
 BASE=14c92681f4d62cf84d901460e0358de09c8847a7
 NUMBERS="0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020
 0022 0023 0024 0025 0026 0033 0035 0036 0037 0041 0042 0043 0044 0045 0046 0047 0038 0039 0048 0049 0050 0051 0052 0053
-0054 0055 0056 0057 0058 0059 0060 0061 0062 0063 0064 0065 0066 0067 0068 0069 0070"
+0054 0055 0056 0057 0058 0059 0060 0061 0062 0063 0064 0065 0066 0067 0068 0069 0070
+0071"
 
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 git init -q "$T"
@@ -24,6 +25,6 @@ set -- $NUMBERS
 [ "$(echo "$COMMITS" | wc -l)" -eq $# ] || { echo "$(echo "$COMMITS" | wc -l) commits, $# numbers" >&2; exit 1; }
 rm -f "$REPO"/patches/[0-9]*.patch
 for c in $COMMITS; do
-  f=$(git -C "$T" format-patch -q -1 "$c" --start-number "$(echo "$1" | sed 's/^0*//')" -o "$REPO/patches" -- . ':!eac-tests' ':!EAC-README.md' ':!.github')
+  f=$(git -C "$T" -c core.abbrev=7 format-patch --no-signature -q -1 "$c" --start-number "$(echo "$1" | sed 's/^0*//')" -o "$REPO/patches" -- . ':!eac-tests' ':!EAC-README.md' ':!.github')
   echo "$(basename "$f")"; shift
 done

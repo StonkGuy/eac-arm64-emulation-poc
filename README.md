@@ -41,7 +41,7 @@ Linux.
 
 | you need | why |
 |---|---|
-| **FEX-Emu 2610 with the patches: [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) tag `eac-2610.4`** | see [docs/patches.md](docs/patches.md); build with `scripts/build-fex.sh` |
+| **FEX-Emu 2610 with the patches: [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) tag `eac-2610.5`** | see [docs/patches.md](docs/patches.md); build with `scripts/build-fex.sh` |
 | **an arm64 Linux host** (tested: Apple M2 with Fedora Asahi Remix + muvm, or macOS 27 with a steamac libkrun guest) | a host with 16 KB pages needs a guest with 4 KB pages, hence the muvm VM; on a 4 KB-page host FEX runs directly (untested) |
 | **Proton Experimental 11.0** and the *Proton EasyAntiCheat Runtime*, Steam on the same side of the VM boundary as FEX | the versions everything here was measured with |
 | host memory tuning (`scripts/host-tune.sh`, Asahi, 16 GB) | with 16 GB the host runs out of memory around an 8 GB VM plus the GPU buffers; zswap/zram/watermark settings keep the OOM killer away |
@@ -65,6 +65,7 @@ needed to run; 0008 and 0010 are correctness fixes in the same area, the rest is
 | 0035 SMC, remote writes | fix | a code page the guest makes writable (`mprotect` RX to RWX) stays writable for other processes, so a hook written with `NtWriteVirtualMemory` no longer fails with `STATUS_PARTIAL_COPY`. Based on yungtry's patch 0028; consumer The Division 2 (per its author); only with `SMCChecks=mtrack` |
 | 0036–0039, 0041–0053 (eac-2610.3) | fix / fidelity | seccomp and Syscall User Dispatch trap paths as Wine 11 uses them (trapped syscall never runs, SUD emulated, no lost or leaked trap frames, EFLAGS bit 31), `execve`/`execveat` under seccomp, `InSyscallInfo` after `rt_sigreturn`, `-EFAULT` for bad pointers, kernel writes into code pages, `munmap` across 4 GiB, SIGBUS stops hidden from a tracer (The Division 2's EAC launcher). See [docs/patches.md](docs/patches.md#h-fixes-since-eac-26102--patches-00360039-00410053) |
 | 0054–0070 (eac-2610.4) | fix / fidelity | exceptions THE FINALS' anti-tamper code probes (IRETQ with NT, MOV to FS/GS, over-long instructions, XSETBV, fetch fault addresses), guest code read fault-safely while compiling (THE FINALS' in-match freeze), the fork's own disk-cache format version, the upstream `0F B8/BC/BD` decode fix, and SMC restarts only for stores that can reach the running block (Hell Let Loose's EAC `210 (#2)`). See [docs/patches.md](docs/patches.md#i-fixes-since-eac-26103--patches-00540070) |
+| 0071 (eac-2610.5) | fix | Proton Experimental 11.0-20261027b retries EAC's native syscalls under Syscall User Dispatch; a signal return onto the trapped `syscall` resumed stale FEX state, so EAC games exited within seconds |
 
 ## What is changed where
 
@@ -104,7 +105,7 @@ On a Steam Frame (or another SteamOS arm64 device), follow [docs/steam-frame.md]
 
 ```sh
 sudo dnf install steam muvm fex-emu && steam          # base install, log in, install VRChat, launch it once
-scripts/build-fex.sh                                  # clones and builds StonkGuy/FEX tag eac-2610.4 into work/FEX
+scripts/build-fex.sh                                  # clones and builds StonkGuy/FEX tag eac-2610.5 into work/FEX
 scripts/vm/install-overlay.sh
 (cd work/FEX/eac-tests/ptrace-inject && ./build.sh clang)
 scripts/vm/run-test-in-vm.sh work/FEX/eac-tests/ptrace-inject/ptrace_inject_test   # must print RESULT: PASS

@@ -36,6 +36,3 @@ index 2a07501..cf8b146 100644
        break;
      default: EFLAGS |= uint32_t {Frame->State.flags[i]} << i; break;
      }
--- 
-2.39.5 (Apple Git-154)
-

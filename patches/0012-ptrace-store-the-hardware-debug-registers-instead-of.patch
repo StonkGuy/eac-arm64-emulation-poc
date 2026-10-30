@@ -235,6 +235,3 @@ index cc09dac..99b83cd 100644
    volatile uint64_t DirtyMask;         ///< bit i set: the tracer wrote Regs[i]; apply it when resuming
    volatile uint64_t SignalNumber;      ///< Non-zero: the pending stop is a signal-delivery stop for this signal
    volatile uint64_t FlushAddr;         ///< The tracer wrote tracee memory: invalidate translated code here
--- 
-2.39.5 (Apple Git-154)
-

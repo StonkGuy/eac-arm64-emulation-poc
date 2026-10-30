@@ -92,6 +92,3 @@ index 9a0104d..21d5e16 100644
      if (!IsAddressInDispatcher(OldPC)) {
        // This is likely to cause issues but in some cases it isn't fatal
        // This can also happen if we have put a signal on hold, then we just reenabled the signal
--- 
-2.39.5 (Apple Git-154)
-

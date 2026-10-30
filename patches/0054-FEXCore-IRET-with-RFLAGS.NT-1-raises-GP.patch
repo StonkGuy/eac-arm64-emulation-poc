@@ -59,6 +59,3 @@ index 731f912..0dac7aa 100644
    Ref SP = _RMWHandle(LoadGPRRegister(X86State::REG_RSP));
  
    // RIP (64/32/16 bits)
--- 
-2.39.5 (Apple Git-154)
-

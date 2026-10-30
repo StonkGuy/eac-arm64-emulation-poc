@@ -51,6 +51,3 @@ index 4c91eb2..54326e8 100644
      Signal = Frame->SynchronousFaultData.Signal;
    } else {
      guest_uctx->uc_mcontext.gregs[FEXCore::x86_64::FEX_REG_TRAPNO] = ConvertSignalToTrapNo(Signal, HostSigInfo);
--- 
-2.39.5 (Apple Git-154)
-

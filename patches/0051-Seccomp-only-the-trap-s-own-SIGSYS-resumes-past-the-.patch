@@ -47,6 +47,3 @@ index 07af884..451801c 100644
    ContextBackup->SavedJITStackSP = ThreadObject->JITStackSP;
  
    auto Frame = Thread->CurrentFrame;
--- 
-2.39.5 (Apple Git-154)
-

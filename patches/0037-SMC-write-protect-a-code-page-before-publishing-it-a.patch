@@ -119,6 +119,3 @@ index d42c792..9816299 100644
    // Appends a list of Block {Address} to CodePages [Start, Start + Length)
    // Returns true if new pages are marked as containing code
    bool AddBlockExecutableRange(FEXCore::Core::InternalThreadState* Thread, auto& Addresses, uint64_t Start, uint64_t Length) {
--- 
-2.39.5 (Apple Git-154)
-

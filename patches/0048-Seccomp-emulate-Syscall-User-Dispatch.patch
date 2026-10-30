@@ -271,6 +271,3 @@ index 7c86004..d8c40cf 100644
    // Host stack pointer that guest code currently runs at when it is not the dispatcher's own level: a guest signal handler
    // entered from the C++ half of a syscall runs below that handler's frames. 0 means ReturningStackLocation. Lets rt_sigreturn
    // drop abandoned syscall-handler frames instead of leaking them.
--- 
-2.39.5 (Apple Git-154)
-

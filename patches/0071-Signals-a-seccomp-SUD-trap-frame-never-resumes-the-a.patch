@@ -1,0 +1,81 @@
+From 37abac21592519ee64e884abee801b575386c1eb Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 22:21:50 +0200
+Subject: [PATCH] Signals: a seccomp/SUD trap frame never resumes the abandoned
+ syscall handler on rt_sigreturn
+
+RestoreFrame_x64 (and the ia32 variants) take the "guest changed RIP" path, which rebuilds the guest state from the
+frame and re-enters the dispatcher, only when the frame's RIP differs from OriginalRIP. For a SECCOMP_RET_TRAP or
+Syscall User Dispatch SIGSYS, OriginalRIP is the trapped `syscall` while the handler is entered past it
+(SeccompTrapRIP). Wine's native-syscall path for EAC (Proton Experimental 11.0-20261027b, "HACK: Allow native syscalls
+for EAC") retries the syscall by moving rip back by 2, which makes the frame's RIP equal OriginalRIP again: FEX then
+restored the interrupted host context, the C++ half of the syscall handler that raised the trap and whose frames are
+abandoned, and the guest died (start_protected_game.exe: illegal instruction at the syscall, or a page fault on
+0xffffff00ffffff00 with FEX_NEEDSSECCOMP=1). A trap frame now always takes the rebuild path, as it already did for every
+other value a handler leaves in rip.
+
+Test: eac-tests/sud-native-retry (Wine's SUD re-arm + retry from EAC's 0x7001'0000'0000 region, 2000 times). Bisected
+under eac-2610.4: trap + return and re-arm without retry pass; any retry (rip -= 2) crashes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../LinuxSyscalls/SignalDelegator.cpp               |  7 ++++---
+ .../SignalDelegator/GuestFramesManagement.cpp       | 13 +++++++++----
+ 2 files changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+index 5108e78..712e442 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
+@@ -367,9 +367,10 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
+ 
+   // A SECCOMP_RET_TRAP SIGSYS reports the instruction *after* the trapped syscall, so present the handler with that
+   // address in its ucontext (Linux does the same). The frame's RIP, and therefore OriginalRIP, is still the `syscall`
+-  // itself, so the ucontext RIP now differs from it: rt_sigreturn then takes the path that restores the handler's
+-  // registers and resumes at the ucontext RIP, instead of the path that resets to the interrupted state and re-runs
+-  // the syscall (discarding the handler's return value). See SeccompEmulator for the kernel semantics.
++  // itself. rt_sigreturn of a frame with SeccompTrapRIP set always takes the path that restores the handler's registers
++  // and resumes at the ucontext RIP (RestoreFrame_*), never the one that resets to the interrupted state, which would
++  // re-enter the abandoned syscall handler: also when the handler moves rip back onto the `syscall` to retry it (Wine's
++  // native-syscall path for EAC). See SeccompEmulator for the kernel semantics.
+   // Only the trap's own SIGSYS (seccomp or Syscall User Dispatch) takes it: an asynchronous signal that arrives
+   // between the filter deciding to trap and the SIGSYS being delivered must see the interrupted state (RIP at the
+   // `syscall`), otherwise its handler returns past the syscall and the trap is skipped without its SIGSYS ever
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
+index 86e9358..11b6201 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
+@@ -169,8 +169,12 @@ void SignalDelegator::RestoreFrame_x64(FEXCore::Core::InternalThreadState* Threa
+   // clear be ignored.
+   CTX->SetFlagsFromCompactedEFLAGS(Thread, guest_uctx->uc_mcontext.gregs[FEXCore::x86_64::FEX_REG_EFL]);
+ 
+-  // If the guest modified the RIP then we need to take special precautions here
+-  if (Context->OriginalRIP != guest_uctx->uc_mcontext.gregs[FEXCore::x86_64::FEX_REG_RIP] || Context->FaultToTopAndGeneratedException) {
++  // If the guest modified the RIP then we need to take special precautions here. A seccomp or Syscall User Dispatch
++  // trap frame always does: the interrupted host context is the C++ half of the syscall handler that raised the trap,
++  // which is abandoned rather than resumed, and a handler that moves rip back onto the `syscall` to retry it (Wine's
++  // native-syscall path for EAC: rip -= 2) makes the frame's RIP equal OriginalRIP again.
++  if (Context->OriginalRIP != guest_uctx->uc_mcontext.gregs[FEXCore::x86_64::FEX_REG_RIP] || Context->FaultToTopAndGeneratedException ||
++      Context->SeccompTrapRIP) {
+ 
+     // Restore previous `InSyscallInfo` structure.
+     Frame->InSyscallInfo = Context->InSyscallInfo;
+@@ -255,7 +259,7 @@ void SignalDelegator::RestoreFrame_ia32(FEXCore::Core::InternalThreadState* Thre
+                                         FEXCore::Core::CpuStateFrame* Frame, void* ucontext) {
+   SigFrame_i32* guest_uctx = reinterpret_cast<SigFrame_i32*>(Context->UContextLocation);
+   // If the guest modified the RIP then we need to take special precautions here
+-  if (Context->OriginalRIP != guest_uctx->sc.ip || Context->FaultToTopAndGeneratedException) {
++  if (Context->OriginalRIP != guest_uctx->sc.ip || Context->FaultToTopAndGeneratedException || Context->SeccompTrapRIP) {
+     // Restore previous `InSyscallInfo` structure.
+     Frame->InSyscallInfo = Context->InSyscallInfo;
+ 
+@@ -340,7 +344,8 @@ void SignalDelegator::RestoreRTFrame_ia32(FEXCore::Core::InternalThreadState* Th
+                                           FEXCore::Core::CpuStateFrame* Frame, void* ucontext) {
+   RTSigFrame_i32* guest_uctx = reinterpret_cast<RTSigFrame_i32*>(Context->UContextLocation);
+   // If the guest modified the RIP then we need to take special precautions here
+-  if (Context->OriginalRIP != guest_uctx->uc.uc_mcontext.gregs[FEXCore::x86::FEX_REG_EIP] || Context->FaultToTopAndGeneratedException) {
++  if (Context->OriginalRIP != guest_uctx->uc.uc_mcontext.gregs[FEXCore::x86::FEX_REG_EIP] || Context->FaultToTopAndGeneratedException ||
++      Context->SeccompTrapRIP) {
+ 
+     // Restore previous `InSyscallInfo` structure.
+     Frame->InSyscallInfo = Context->InSyscallInfo;

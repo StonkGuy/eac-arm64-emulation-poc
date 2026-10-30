@@ -41,6 +41,3 @@ index f9945a2..e4053cd 100644
  #define COPY_REG(x) Frame->State.gregs[FEXCore::X86State::REG_##x] = guest_uctx->uc_mcontext.gregs[FEXCore::x86_64::FEX_REG_##x];
      COPY_REG(R8);
      COPY_REG(R9);
--- 
-2.39.5 (Apple Git-154)
-

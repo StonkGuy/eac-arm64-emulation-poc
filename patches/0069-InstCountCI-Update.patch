@@ -1521,6 +1521,3 @@ index 9ee521f..9541bb0 100644
    },
    "Instructions": {
      "fstp dword [ebx*4+0x204a20]": {
--- 
-2.39.5 (Apple Git-154)
-

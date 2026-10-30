@@ -62,6 +62,3 @@ index 83efef3..99b4e4b 100644
    if ((St >> 16) == 0 && WSTOPSIG(St) == SIGPROF && IsFexTracee(Pid)) {
      // FEX's own sampling profiler signal: never visible to the guest tracer.
      HostPtrace(PTRACE_CONT, Pid, nullptr, nullptr);
--- 
-2.39.5 (Apple Git-154)
-

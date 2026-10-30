@@ -179,6 +179,3 @@ index 86de8da..075336d 100644
    FEX::HLE::ThreadStateObject* CreateThread(const FEXCore::Core::CPUState* NewThreadState = nullptr, uint64_t ParentTID = 0,
                                              FEX::HLE::ThreadStateObject* InheritThread = nullptr);
    void TrackThread(FEX::HLE::ThreadStateObject* Thread) {
--- 
-2.39.5 (Apple Git-154)
-

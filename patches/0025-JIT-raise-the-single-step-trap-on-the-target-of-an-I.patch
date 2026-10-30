@@ -131,6 +131,3 @@ index 71766e0..b02dbdf 100644
        _StoreContextGPR(OpSize::i8Bit, NewPackedTF, ARRAY_OFFSETOF(FEXCore::Core::CPUState, flags, BitOffset));
      } else {
        _StoreContextGPR(OpSize::i8Bit, Value, ARRAY_OFFSETOF(FEXCore::Core::CPUState, flags, BitOffset));
--- 
-2.39.5 (Apple Git-154)
-

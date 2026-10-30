@@ -71,6 +71,3 @@ index deba62c..ad61b7b 100644
    // Apparently RAX is always set to zero in case of badly misbehaving C applications and variadics.
    Frame->State.gregs[FEXCore::X86State::REG_RAX] = 0;
    Frame->State.gregs[FEXCore::X86State::REG_RDI] = Signal;
--- 
-2.39.5 (Apple Git-154)
-

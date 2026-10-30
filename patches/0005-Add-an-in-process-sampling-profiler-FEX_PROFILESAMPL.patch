@@ -297,6 +297,3 @@ index 69e10b3..ae0bc97 100644
    if (ProfileStats()) {
      ThreadStateObject->Thread->ThreadStats = Stat.AllocateSlot(ThreadStateObject->ThreadInfo.TID);
    }
--- 
-2.39.5 (Apple Git-154)
-

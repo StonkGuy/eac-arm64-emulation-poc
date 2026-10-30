@@ -35,6 +35,3 @@ index 451801c..e4607ff 100644
      ContextBackup->SeccompTrapRIP = ThreadObject->SeccompTrapRIP;
      ThreadObject->SeccompTrapRIP = 0;
    }
--- 
-2.39.5 (Apple Git-154)
-

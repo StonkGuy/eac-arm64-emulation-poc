@@ -126,6 +126,3 @@ index 236da05..215c8e6 100644
    // Terminate this thread the way Linux's force_sigsegv does: force the SIGSEGV disposition to SIG_DFL, log the
    // offending address once, clean up, and die from SIGSEGV. Used when the guest signal frame cannot be written.
    [[noreturn]] void ForceGuestSigSegv(uint64_t BadSP);
--- 
-2.39.5 (Apple Git-154)
-

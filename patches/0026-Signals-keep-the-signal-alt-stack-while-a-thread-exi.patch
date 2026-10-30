@@ -156,6 +156,3 @@ index 8b9c259..00188fc 100644
        // We have ownership of the thread object. Make sure to clean it up to prevent memory leaks.
        FEX::HLE::_SyscallHandler->TM.DestroyThread(ThreadObject, true);
        if (Status == 0) {
--- 
-2.39.5 (Apple Git-154)
-

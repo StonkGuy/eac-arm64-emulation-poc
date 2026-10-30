@@ -689,6 +689,3 @@ index 9e59849..6a7cb80 100644
 +  CHECK(::syscall(SYS_fstat, STDOUT_FILENO, InvalidPage()) == -1);
 +  CHECK(errno == EFAULT);
 +}
--- 
-2.39.5 (Apple Git-154)
-

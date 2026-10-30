@@ -86,6 +86,3 @@ index 3010516..a00f46d 100644
    // Flags [60..58]: Dst size
    constexpr InstFlagType FLAGS_SIZE_DST_OFF = 58;
    // Flags [63..61]: Src size
--- 
-2.39.5 (Apple Git-154)
-
