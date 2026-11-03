@@ -2,13 +2,15 @@
 
 **概念验证：在 arm64 Linux 机器上通过 FEX-Emu 运行带真正 Easy Anti-Cheat 的 VRChat —— 以及为达成这一目标所做的一切。**
 
-> **提醒：此处有龙（风险较高），请注意相关风险。** 我个人尚未观察到任何问题，但这是在开发者不支持的配置（模拟的 x86 CPU，通常还在虚拟机内）上运行受反作弊保护的游戏的尝试。反作弊或游戏服务条款可能将其视为违规，账号可能被采取行动；请使用你承受得起损失的账号。这些脚本会替换 Steam 的 FEX 工具内的文件（`restore` 会恢复 Valve 的原版文件），此处任何内容均未得到 Valve、Epic Games、FEX-Emu 项目或任何游戏开发商的认可。不提供任何担保；参见[许可协议](#license)。
+> **提醒：此处有龙（风险较高），请注意相关风险。** 我个人尚未观察到任何问题，但这是在开发者不支持的配置（模拟的 x86 CPU，通常还在虚拟机内）上运行受反作弊保护的游戏的尝试。反作弊或游戏服务条款可能将其视为违规，账号可能被采取行动；请使用你承受得起损失的账号。这些脚本会替换 Steam 的 FEX 工具内的文件（`restore` 会恢复 Valve 的原版文件），此处任何内容均未得到 Valve、Epic Games、FEX-Emu 项目或任何游戏开发商的认可。不提供任何担保；参见[许可协议](#许可协议)。
 
 这是一个独立的仓库。它记录了调查过程以及对 **FEX-Emu**（2610；基于 2609.1 开发）所做的修改，这些修改是在 arm64 主机上启动一款带 Epic 的 Easy Anti-Cheat for Linux/Proton 的 x86-64 游戏所必需的：修改以补丁文件的形式保留，你可以自行应用，并附有说明每个补丁修复了什么问题的测试，以及发现这些问题的诊断工具。
 
 ![VRChat 在 Apple M2 上的 Fedora Asahi Remix 中通过打补丁的 FEX-Emu 运行，旁边是主机的 `fastfetch`](docs/img/vrchat-m2.png)
 
-它刻意限定为**一块 SoC 上的一款游戏**（Apple M2 上的 VRChat：在 [muvm](https://github.com/AsahiLinux/muvm) 微虚拟机内的 Fedora Asahi Remix 下开发，也已在 macOS 上验证，见下文）。把它当作起点并进一步推进——另一款游戏、另一块 SoC、另一台主机——但请在此处报告你发现的问题，而不是只在 fork 中修复；参见[Bugs、修复与上游贡献](#bugs-fixes-and-upstreaming)。
+它刻意限定为**一块 SoC 上的一款游戏**（Apple M2 上的 VRChat：在 [muvm](https://github.com/AsahiLinux/muvm) 微虚拟机内的 Fedora Asahi Remix 下开发，也已在 macOS 上验证，见下文）。把它当作起点并进一步推进——另一款游戏、另一块 SoC、另一台主机——但请在此处报告你发现的问题，而不是只在 fork 中修复；参见[Bugs、修复与上游贡献](#bugs修复与上游贡献)。
+
+**喜欢它？帮它一把。** 欢迎给仓库点星标、在出问题时提交 issue（附上你的硬件和日志），也欢迎提交 pull request。如果你在自己的 fork 中有修复或改进，也请在这里开一个 pull request：它会被审查、署上你的名字，并发布给所有人。
 
 **macOS。** 同一套打补丁的 FEX 也能在 macOS 27 的 Apple M2 MacBook Air 上运行带正版 EAC 的 VRChat，环境为 [steamac](https://github.com/fxgl/steamac) libkrun 客户机（Valve 的 ARM64 SteamOS，Steam 自带的 FEX 兼容工具被替换为打补丁的构建）。结果、耗时与限制：[docs/macos-port.md](docs/macos-port.md)。搭建步骤及后续修复（包括用于 Direct3D 11 的 DXMT 图形路径）位于另一个独立的 fork：[StonkGuy/steamac](https://github.com/StonkGuy/steamac)（`main` 及其面向玩家的发行版，`fex-eac` 用于开发）。
 
@@ -20,7 +22,7 @@
 
 | 你需要 | 原因 |
 |---|---|
-| **FEX-Emu 2610 及补丁：[StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) 标签 `eac-2610.2`** | 参见 [docs/patches.md](docs/patches.md)；用 `scripts/build-fex.sh` 构建 |
+| **FEX-Emu 2610 及补丁：[StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) 标签 `eac-2610.5`** | 参见 [docs/patches.md](docs/patches.md)；用 `scripts/build-fex.sh` 构建 |
 | **arm64 Linux 主机**（已验证：Apple M2 + Fedora Asahi Remix + muvm，或 macOS 27 + steamac libkrun 客户机） | 16 KB 页面的主机需要 4 KB 页面的客户机，因此需要 muvm 虚拟机；在 4 KB 页面主机上 FEX 可直接运行（未测试） |
 | **Proton Experimental 11.0** 和 *Proton EasyAntiCheat Runtime*，Steam 与 FEX 位于虚拟机边界的同一侧 | 此处所有内容均基于这些版本测量 |
 | 主机内存调优（`scripts/host-tune.sh`，Asahi，16 GB） | 16 GB 下，约 8 GB 虚拟机加 GPU 缓冲时主机内存耗尽；zswap/zram/水位设置可避免 OOM killer |
@@ -41,6 +43,9 @@
 | 0022–0026 第二波 | 保真度 | 每次 seccomp 陷阱的主机栈泄漏（0022）、客户机读取 FEX 的 call/ret 影子栈保护页（0023）、IRETQ 目标上的 TF 陷阱（0025）、线程在信号备用栈上退出时的信号备用栈（0026）；0024 是分析器选项。在第二款游戏（THE FINALS）上发现，其反篡改引导程序会观察它们；仅涉及陷阱、故障和退出路径 |
 | 0033 `/proc/<pid>/maps` | 修复 | maps 文件只列出被模拟进程的映射（低于 2^47），而不列出 FEX 及其 AArch64 主机库。没有它，EAC 启动器中从子进程 maps 里挑选库并注入的模块会选择主机库并以 `210 Unexpected error. (#1)` 失败（在 Mini Royale 通过 Proton 时出现；VRChat 的部署仍提供较旧的模块，尚未受影响） |
 | 0035 SMC，远程写入 | 修复 | 客户机设为可写（`mprotect` RX 到 RWX）的代码页对其他进程保持可写，因此用 `NtWriteVirtualMemory` 写入的钩子不再以 `STATUS_PARTIAL_COPY` 失败。基于 yungtry 的补丁 0028；使用者为 The Division 2（据其作者）；仅在 `SMCChecks=mtrack` 下生效 |
+| 0036–0039、0041–0053（eac-2610.3） | 修复 / 保真度 | Wine 11 所用的 seccomp 与 Syscall User Dispatch 陷阱路径（被陷阱捕获的系统调用不会执行、模拟 SUD、陷阱帧不丢失也不泄漏、EFLAGS 第 31 位），seccomp 下的 `execve`/`execveat`，`rt_sigreturn` 之后的 `InSyscallInfo`，错误指针返回 `-EFAULT`，内核写入代码页，跨 4 GiB 的 `munmap`，对跟踪者隐藏 SIGBUS 停止（The Division 2 的 EAC 启动器）。参见 [docs/patches.md](docs/patches.md#h-fixes-since-eac-26102--patches-00360039-00410053) |
+| 0054–0070（eac-2610.4） | 修复 / 保真度 | THE FINALS 反篡改代码探测的异常（带 NT 的 IRETQ、MOV 到 FS/GS、超长指令、XSETBV、取指故障地址），编译时以故障安全的方式读取客户机代码（THE FINALS 对局中的卡死），fork 自己的磁盘缓存格式版本，上游的 `0F B8/BC/BD` 解码修复，以及仅对可能写到正在运行的块的存储才重启 SMC（Hell Let Loose 的 EAC `210 (#2)`）。参见 [docs/patches.md](docs/patches.md#i-fixes-since-eac-26103--patches-00540070) |
+| 0071（eac-2610.5） | 修复 | Proton Experimental 11.0-20261027b 会在 Syscall User Dispatch 下重试 EAC 的原生系统调用；信号返回到被陷阱捕获的 `syscall` 时恢复了过时的 FEX 状态，导致 EAC 游戏在几秒内退出 |
 
 ## 各处的改动
 
@@ -48,7 +53,7 @@
 
 | 层 | 内容 | 类型 | 位置 |
 |---|---|---|---|
-| **FEX-Emu（模拟器）** | 0001 `ptrace` 模拟，0007/0008/0010 信号与 seccomp 保真度，0004 失效，0002 SMC 热页，0011–0020 内核保真度缺口（调试寄存器、`/proc`、`arch_prctl`、regset、`restart_syscall`、信号帧），0022/0023/0025/0026 主机栈、故障与单步保真度，0033 `/proc/<pid>/maps`，0035 SMC 远程写入，0024 分析器选项，0003/0005/0006/0009 诊断 | **新源代码**，FEX-2610 上每个补丁一个提交 | [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) 分支 `eac-2610`（测试在 `eac-tests/` 中），由 `scripts/build-fex.sh` 构建；`patches/` 是生成的快照 |
+| **FEX-Emu（模拟器）** | 0001 `ptrace` 模拟，0007/0008/0010 信号与 seccomp 保真度，0004 失效，0002 SMC 热页，0011–0020 内核保真度缺口（调试寄存器、`/proc`、`arch_prctl`、regset、`restart_syscall`、信号帧），0022/0023/0025/0026 主机栈、故障与单步保真度，0033 `/proc/<pid>/maps`，0035 SMC 远程写入，0036–0039/0041–0053 陷阱、exec 与系统调用修复，0024 分析器选项，0003/0005/0006/0009 诊断 | **新源代码**，FEX-2610 上每个补丁一个提交 | [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) 分支 `eac-2610`（测试在 `eac-tests/` 中），由 `scripts/build-fex.sh` 构建；`patches/` 是生成的快照 |
 | **Proton / Wine** | `WINE_CPU_TOPOLOGY=16:…`（报告 16 个 CPU；修复 join 前的卡顿） | **原版 Proton 设置**，无补丁 | 启动选项，`scripts/set-launch-options.sh` |
 | | `EAC_LAUNCHERDIR`、`PROTON_EAC_RUNTIME`（加载 EAC 运行时）、`WINEDEBUG=-all`、`PROTON_USE_XALIA=0` | 原版 Proton 设置 | 启动选项 |
 | | `DXVK_CONFIG_FILE` → `dxgi.maxDeviceMemory`/`maxSharedMemory` = 3072 | 原版 DXVK 设置 | `scripts/dxvk.conf` |
@@ -70,7 +75,7 @@
 
 ```sh
 sudo dnf install steam muvm fex-emu && steam          # 基础安装，登录，安装 VRChat，启动一次
-scripts/build-fex.sh                                  # 将 StonkGuy/FEX 标签 eac-2610.2 克隆并构建到 work/FEX
+scripts/build-fex.sh                                  # 将 StonkGuy/FEX 标签 eac-2610.5 克隆并构建到 work/FEX
 scripts/vm/install-overlay.sh
 (cd work/FEX/eac-tests/ptrace-inject && ./build.sh clang)
 scripts/vm/run-test-in-vm.sh work/FEX/eac-tests/ptrace-inject/ptrace_inject_test   # 必须输出 RESULT: PASS
