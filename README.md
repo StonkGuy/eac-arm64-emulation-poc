@@ -135,10 +135,11 @@ open: [docs/status.md](docs/status.md).
   that as a policy statement, not a licence: it is tolerated-but-unsupported, and this repository marks the script
   **optional**: VRChat runs without it. It may be useful for other games whose anti-cheat inspects the machine's
   hardware identity. It does not modify the game or the anti-cheat.
-* **Hosts need a 48-bit address space, and the x86-64 Proton.** FEX runs a 64-bit guest at its real addresses, so the
-  host must reach the x86-64 user range: EAC's launcher maps a fixed page at `0x7001_0000_0000`, and Valve's Wine
-  treats a trapped syscall as native only above `0x7000_0000_0000`. Kernels with 39-bit VA (Meta Quest 3, many Android
-  phones) stop at "Failed to initialize Wine helper buffer". Use the x86-64 Proton Experimental: an ARM64 Proton runs
+* **39-bit address-space hosts do not work yet, and EAC needs the x86-64 Proton.** FEX runs a 64-bit guest at its real
+  addresses, and EAC's launcher maps a fixed page at `0x7001_0000_0000`; Valve's Wine also treats a trapped syscall as
+  native only above `0x7000_0000_0000`. Kernels with 39-bit VA (Meta Quest 3, many Android phones) currently stop at
+  "Failed to initialize Wine helper buffer"; 48-bit VA kernels (Steam Frame) work. Fixes for 39-bit hosts are being
+  worked on elsewhere, with no working report yet. Use the x86-64 Proton Experimental: an ARM64 Proton runs
   Wine as arm64, so EAC's x86-64 Linux module fails to map (`206`), and these patches (`ptrace`, signals, seccomp, `/proc`)
   live in FEX's Linux frontend, which an ARM64 Proton does not use.
 * **Not supported by VRChat.** VRChat does not support virtual machines or emulation; Epic/VRChat may change anything
