@@ -1,4 +1,4 @@
-From a29c296ced0afb6479c07027c4c80db58ca163bf Mon Sep 17 00:00:00 2001
+From 297a6ae5c90f60014af58538343c12cef75b479a Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Tue, 27 Oct 2026 22:30:09 +0200
 Subject: [PATCH] FEXCore: read guest code fault-safely while compiling
@@ -32,21 +32,26 @@ the disk cache skips the block.
 Test: eac-tests/decode-race stalled in 2 of 3 runs before, passes 5 of 5
 after (8.6 to 10.3 million protection toggles per run).
 
+eac-2611 (FEX-2611.1): PeekByte and ReadData merged by hand with upstream b65c96b75e's
+readable-byte count: a range check must now cover every byte (== Size), and a fault-safe copy that fails after a
+full range check counts as no byte of the field read, so a partial decode never reports a fault address past the
+start of the field the decoder could not read.
+
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
  FEXCore/Source/CMakeLists.txt                 |  1 +
  FEXCore/Source/Interface/Core/Core.cpp        | 18 +++++--
  FEXCore/Source/Interface/Core/DiskCache.cpp   | 38 +++++++++++++--
- FEXCore/Source/Interface/Core/Frontend.cpp    | 13 +++--
+ FEXCore/Source/Interface/Core/Frontend.cpp    | 17 +++++--
  FEXCore/Source/Utils/FaultSafeRead.cpp        | 48 +++++++++++++++++++
  FEXCore/include/FEXCore/Utils/FaultSafeRead.h | 27 +++++++++++
  .../LinuxSyscalls/FaultSafeUserMemAccess.cpp  |  4 ++
- 7 files changed, 135 insertions(+), 14 deletions(-)
+ 7 files changed, 139 insertions(+), 14 deletions(-)
  create mode 100644 FEXCore/Source/Utils/FaultSafeRead.cpp
  create mode 100644 FEXCore/include/FEXCore/Utils/FaultSafeRead.h
 
 diff --git a/FEXCore/Source/CMakeLists.txt b/FEXCore/Source/CMakeLists.txt
-index dd8e4aa..254b355 100644
+index 61385d2..b515a4a 100644
 --- a/FEXCore/Source/CMakeLists.txt
 +++ b/FEXCore/Source/CMakeLists.txt
 @@ -4,6 +4,7 @@ set(FEXCORE_BASE_SRCS
@@ -58,7 +63,7 @@ index dd8e4aa..254b355 100644
    Utils/ForcedAssert.cpp
    Utils/LogManager.cpp
 diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
-index cf8b146..c3acd33 100644
+index e7d7563..5c5bcbf 100644
 --- a/FEXCore/Source/Interface/Core/Core.cpp
 +++ b/FEXCore/Source/Interface/Core/Core.cpp
 @@ -31,6 +31,7 @@ $end_info$
@@ -81,7 +86,7 @@ index cf8b146..c3acd33 100644
            auto CRC = WantsDiskCachePatching ?
                         Thread->OpDispatcher->_PatchableGuestCRC(IR::OpSize::i64Bit, Value, (int64_t)ExistingCodePtr, DecodedInfo->InstSize) :
                         Thread->OpDispatcher->Constant(Value);
-@@ -1008,10 +1012,14 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+@@ -1017,10 +1021,14 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
        if (DebugData && DebugData->Relocations) {
          Relocations = *DebugData->Relocations;
        }
@@ -101,7 +106,7 @@ index cf8b146..c3acd33 100644
  
      if (CodeMapWriter && Region && Region->FileStartVA != 0) {
 diff --git a/FEXCore/Source/Interface/Core/DiskCache.cpp b/FEXCore/Source/Interface/Core/DiskCache.cpp
-index cf34191..2ffff89 100644
+index 3c78b22..ee4c489 100644
 --- a/FEXCore/Source/Interface/Core/DiskCache.cpp
 +++ b/FEXCore/Source/Interface/Core/DiskCache.cpp
 @@ -11,6 +11,7 @@
@@ -137,7 +142,7 @@ index cf34191..2ffff89 100644
  namespace FEXCore {
  
  namespace DiskCache {
-@@ -569,12 +588,18 @@ namespace DiskCache {
+@@ -576,12 +595,18 @@ namespace DiskCache {
          }
          uint64_t HashStart = SubBlock.Entry;
          // skip over masked in-block data and data/etc gaps between blocks
@@ -159,7 +164,7 @@ index cf34191..2ffff89 100644
          }
        }
        GuestCodeKey = XXH3_64bits_digest(&HashState);
-@@ -697,8 +722,13 @@ namespace DiskCache {
+@@ -704,8 +729,13 @@ namespace DiskCache {
          if (FirstHash || LastFootprintHashed != CurrentFootprint) {
            XXH3_state_t HashState;
            XXH3_128bits_reset(&HashState);
@@ -175,7 +180,7 @@ index cf34191..2ffff89 100644
            LiveGuestHash = XXH3_128bits_digest(&HashState);
            LastFootprintHashed = CurrentFootprint;
 diff --git a/FEXCore/Source/Interface/Core/Frontend.cpp b/FEXCore/Source/Interface/Core/Frontend.cpp
-index 6667f16..8f08849 100644
+index 14836fe..34f8449 100644
 --- a/FEXCore/Source/Interface/Core/Frontend.cpp
 +++ b/FEXCore/Source/Interface/Core/Frontend.cpp
 @@ -19,6 +19,7 @@ $end_info$
@@ -186,32 +191,36 @@ index 6667f16..8f08849 100644
  #include <FEXCore/Utils/LogManager.h>
  #include <FEXCore/Utils/Profiler.h>
  #include <FEXCore/Utils/Telemetry.h>
-@@ -135,8 +136,11 @@ uint8_t Decoder::ReadByte() {
+@@ -158,8 +159,11 @@ uint8_t Decoder::ReadByte() {
  
  std::optional<uint8_t> Decoder::PeekByte(uint8_t Offset) {
    uint64_t ByteAddress = reinterpret_cast<uint64_t>(InstStream.InstStream + InstructionSize + Offset);
--  if (CheckRangeExecutable(ByteAddress, 1)) {
+-  if (CheckRangeExecutable(ByteAddress, 1) == 1) {
 -    return InstStream.AdjustedInstStream[InstructionSize + Offset];
 +  uint8_t Byte;
 +  // The range check is no guarantee: another guest thread can revoke the page before the read (see FaultSafeRead).
-+  if (CheckRangeExecutable(ByteAddress, 1) &&
++  if (CheckRangeExecutable(ByteAddress, 1) == 1 &&
 +      FEXCore::Utils::FaultSafeRead::Copy(&Byte, &InstStream.AdjustedInstStream[InstructionSize + Offset], 1)) {
 +    return Byte;
    } else {
      return std::nullopt;
    }
-@@ -149,9 +153,8 @@ std::pair<uint64_t, bool> Decoder::ReadData(uint8_t Size) {
-   uint64_t Address = reinterpret_cast<uint64_t>(InstStream.InstStream + InstructionSize);
-   LastFieldReadOffset = (uint8_t)InstructionSize;
-   LastFieldReadSize = Size;
--  if (CheckRangeExecutable(Address, Size)) {
--    std::memcpy(&Res, &InstStream.AdjustedInstStream[InstructionSize], Size);
--  } else {
-+  // The range check is no guarantee: another guest thread can revoke the page before the read (see FaultSafeRead).
-+  if (!CheckRangeExecutable(Address, Size) || !FEXCore::Utils::FaultSafeRead::Copy(&Res, &InstStream.AdjustedInstStream[InstructionSize], Size)) {
-     HitNonExecutableRange = true;
-     // See PeekByte, this specific case may cause some executable memory to read as 0 but it doesn't matter as the entire instruction will be rolled back anyway.
+@@ -185,9 +189,12 @@ std::pair<uint64_t, bool> Decoder::ReadData(uint8_t Size) {
      Res = 0;
+   } else {
+     ReadableSize = CheckRangeExecutable(Address, Size);
+-    if (ReadableSize == Size) {
+-      std::memcpy(&Res, &InstStream.AdjustedInstStream[InstructionSize], Size);
+-    } else {
++    // The range check is no guarantee: another guest thread can revoke the page before the read (see FaultSafeRead).
++    // A read that faults counts as no byte of the field read.
++    if (ReadableSize == Size && !FEXCore::Utils::FaultSafeRead::Copy(&Res, &InstStream.AdjustedInstStream[InstructionSize], Size)) {
++      ReadableSize = 0;
++    }
++    if (ReadableSize != Size) {
+       HitNonExecutableRange = true;
+       // See PeekByte, this specific case may cause some executable memory to read as 0 but it doesn't matter as the entire instruction will be rolled back anyway.
+       Res = 0;
 diff --git a/FEXCore/Source/Utils/FaultSafeRead.cpp b/FEXCore/Source/Utils/FaultSafeRead.cpp
 new file mode 100644
 index 0000000..33efc6c

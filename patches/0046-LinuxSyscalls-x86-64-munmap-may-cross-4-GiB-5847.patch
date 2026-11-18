@@ -1,4 +1,4 @@
-From adff8d3da54f1aad4bfd04159520f5fc54a734d3 Mon Sep 17 00:00:00 2001
+From df5c6982875e9d2b2623f8035efc77fd7f06dfbc Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Mon, 12 Oct 2026 03:02:51 +0300
 Subject: [PATCH] LinuxSyscalls: x86-64 munmap may cross 4 GiB (#5847)

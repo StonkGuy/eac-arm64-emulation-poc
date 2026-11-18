@@ -1,4 +1,4 @@
-From 0267762a46a4f4da1675e9169d5ffba3e09fbc4e Mon Sep 17 00:00:00 2001
+From 7bb570995d3595e5c50991eb9ae3f5109c541062 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 12:00:27 +0300
 Subject: [PATCH] Signals: do not leave InSyscallInfo set for a guest handler
@@ -52,7 +52,7 @@ index e2ed6b4..4bc889e 100644
    uint64_t GuestSignalMask; ///< guest-visible signal mask at the time the guest handler was entered (restored at rt_sigreturn)
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 9a0104d..21d5e16 100644
+index 17d05dd..7237439 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -173,6 +173,7 @@ ArchHelpers::Context::ContextBackup* SignalDelegator::StoreThreadState(FEXCore::

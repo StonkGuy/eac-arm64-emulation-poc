@@ -1,4 +1,4 @@
-From 304475322b9b04493e35ef9690d2489bcda80a35 Mon Sep 17 00:00:00 2001
+From 9afe9bd9947c9c9a0cdabde68bb4ffb85ad7a44d Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 11 Oct 2026 16:01:09 +0300
 Subject: [PATCH] SMC: code pages the guest makes writable stay writable for

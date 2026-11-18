@@ -1,4 +1,4 @@
-From 83eeb4ff72cc7731de6b7f53d2cd522fecf74fe2 Mon Sep 17 00:00:00 2001
+From 95ed879721aa897f530c2d5caef86588c188453b Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Tue, 13 Oct 2026 12:11:29 +0300
 Subject: [PATCH] Syscalls: keep argv[0] for an FD execveat through the FEX

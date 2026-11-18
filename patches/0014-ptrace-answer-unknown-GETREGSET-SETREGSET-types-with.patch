@@ -1,4 +1,4 @@
-From 13282e08f62abde65890787fd361006c3b6ea75f Mon Sep 17 00:00:00 2001
+From 8e6103b385dcd3cadd52d1e40c499ea6212ed3e5 Mon Sep 17 00:00:00 2001
 From: build <build@invalid>
 Date: Thu, 8 Oct 2026 20:37:07 +0300
 Subject: [PATCH] ptrace: answer unknown GETREGSET/SETREGSET types with

@@ -1,4 +1,4 @@
-From 3270470b3a3edcb708593d73b34a4265487d507d Mon Sep 17 00:00:00 2001
+From 048d8b69c4b4297fffb0f62b69fddeed6c14618c Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 11 Oct 2026 22:07:04 +0300
 Subject: [PATCH] Syscalls: return EFAULT for bad user pointers in FEX's own
@@ -38,6 +38,11 @@ and the host syscall can still fault inside FEX.
 Upstream: issue #3942 (open; FaultSafeUserMemAccess and the Known_Failures entry are unchanged on FEX main as
 triaged at 14c9268).
 
+eac-2611 (FEX-2611.1): FEX-2611 contains upstream 13bc7faee ("Syscall: stat of nullptr shouldn't abort()":
+SYSCALL_EFAULT_IF_NULL and VerifyIs* in the x64 stat family), a NULL-only subset of this patch. The x64/FD.cpp
+handlers keep this patch's version (any unreadable pointer); upstream's macro stays in x32/FD.cpp. Issue #3942 is
+still open; syscalls_efault.64 leaves Known_Failures, noexec_protect.64 left it upstream (3e3e538847).
+
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
  .../LinuxSyscalls/FaultSafeUserMemAccess.cpp  | 25 +++++++
@@ -50,12 +55,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  .../LinuxSyscalls/Syscalls/Info.cpp           |  8 ++-
  .../LinuxSyscalls/Syscalls/Signals.cpp        | 22 ++++--
  .../LinuxSyscalls/Syscalls/Thread.cpp         |  6 +-
- .../LinuxEmulation/LinuxSyscalls/x64/FD.cpp   | 41 ++++++++----
+ .../LinuxEmulation/LinuxSyscalls/x64/FD.cpp   | 48 +++++++------
  .../LinuxSyscalls/x64/Signals.cpp             | 15 ++++-
  .../LinuxSyscalls/x64/Thread.cpp              | 67 ++++++++++---------
  unittests/FEXLinuxTests/Known_Failures        |  3 +-
  .../tests/syscalls/syscalls_efault.cpp        | 57 ++++++++++++++++
- 15 files changed, 247 insertions(+), 68 deletions(-)
+ 15 files changed, 247 insertions(+), 75 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/FaultSafeUserMemAccess.cpp
 index 6471e64..9af89be 100644
@@ -198,10 +203,10 @@ index 0322a78..9d40fe2 100644
    auto lk = FEXCore::MaskSignalsAndLockMutex(FilterMutex);
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 98d0752..df50629 100644
+index d2873b3..40e721a 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-@@ -635,7 +635,8 @@ bool SignalDelegator::HandleFrontendSIGSEGV(FEXCore::Core::InternalThreadState*
+@@ -649,7 +649,8 @@ bool SignalDelegator::HandleFrontendSIGSEGV(FEXCore::Core::InternalThreadState*
    auto SigInfo = *static_cast<siginfo_t*>(Info);
  
    if (FaultSafeUserMemAccess::TryHandleSafeFault(Signal, SigInfo, UContext)) {
@@ -212,10 +217,10 @@ index 98d0752..df50629 100644
  
  #ifdef ARCHITECTURE_arm64
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
-index 0813fca..cbfd79a 100644
+index a164455..863b5b6 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
-@@ -609,11 +609,16 @@ uint64_t GetDentsEmulation(int fd, T* dirp, uint32_t count);
+@@ -613,11 +613,16 @@ uint64_t GetDentsEmulation(int fd, T* dirp, uint32_t count);
  namespace FaultSafeUserMemAccess {
    // These are little helper functions for cases when FEX needs to copy data to or from the application in a robust fashion.
    // CopyFromUser and CopyToUser are memcpy routines that expect to safely SIGSEGV when reading or writing application memory respectively.
@@ -390,21 +395,23 @@ index c6a48e7..3d00493 100644
      case 0x3001:        // ARCH_CET_STATUS
        Result = -EINVAL; // We don't support CET, return EINVAL
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/FD.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/FD.cpp
-index 703c875..4eab76a 100644
+index 91b5a10..4eab76a 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/FD.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/x64/FD.cpp
-@@ -63,45 +63,59 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
+@@ -63,14 +63,16 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
      });
  
    REGISTER_SYSCALL_IMPL_X64(stat, [](FEXCore::Core::CpuStateFrame* Frame, const char* pathname, FEX::HLE::x64::guest_stat* buf) -> uint64_t {
+-    SYSCALL_EFAULT_IF_NULL(pathname);
 -    FaultSafeUserMemAccess::VerifyIsStringReadableMaxSize(pathname, PATH_MAX);
--    FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
 +    if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
 +      return -EFAULT;
 +    }
      struct stat host_stat;
      uint64_t Result = FEX::HLE::_SyscallHandler->FM.Stat(pathname, &host_stat);
      if (Result != -1) {
+-      SYSCALL_EFAULT_IF_NULL(buf);
+-      FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
 -      *buf = host_stat;
 +      FEX::HLE::x64::guest_stat guest = host_stat;
 +      if (FaultSafeUserMemAccess::CopyToUser(buf, &guest, sizeof(guest))) {
@@ -413,12 +420,12 @@ index 703c875..4eab76a 100644
      }
      SYSCALL_ERRNO();
    });
- 
-   REGISTER_SYSCALL_IMPL_X64(fstat, [](FEXCore::Core::CpuStateFrame* Frame, int fd, FEX::HLE::x64::guest_stat* buf) -> uint64_t {
--    FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
+@@ -79,36 +81,41 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
      struct stat host_stat;
      uint64_t Result = ::fstat(fd, &host_stat);
      if (Result != -1) {
+-      SYSCALL_EFAULT_IF_NULL(buf);
+-      FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
 -      *buf = host_stat;
 +      FEX::HLE::x64::guest_stat guest = host_stat;
 +      if (FaultSafeUserMemAccess::CopyToUser(buf, &guest, sizeof(guest))) {
@@ -429,14 +436,16 @@ index 703c875..4eab76a 100644
    });
  
    REGISTER_SYSCALL_IMPL_X64(lstat, [](FEXCore::Core::CpuStateFrame* Frame, const char* path, FEX::HLE::x64::guest_stat* buf) -> uint64_t {
+-    SYSCALL_EFAULT_IF_NULL(path);
 -    FaultSafeUserMemAccess::VerifyIsStringReadableMaxSize(path, PATH_MAX);
--    FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
 +    if (!FaultSafeUserMemAccess::IsStringReadable(path)) {
 +      return -EFAULT;
 +    }
      struct stat host_stat;
      uint64_t Result = FEX::HLE::_SyscallHandler->FM.Lstat(path, &host_stat);
      if (Result != -1) {
+-      SYSCALL_EFAULT_IF_NULL(buf);
+-      FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
 -      *buf = host_stat;
 +      FEX::HLE::x64::guest_stat guest = host_stat;
 +      if (FaultSafeUserMemAccess::CopyToUser(buf, &guest, sizeof(guest))) {
@@ -448,14 +457,16 @@ index 703c875..4eab76a 100644
  
    REGISTER_SYSCALL_IMPL_X64(
      newfstatat, [](FEXCore::Core::CpuStateFrame* Frame, int dirfd, const char* pathname, FEX::HLE::x64::guest_stat* buf, int flag) -> uint64_t {
+-      SYSCALL_EFAULT_IF_NULL(pathname);
 -      FaultSafeUserMemAccess::VerifyIsStringReadableMaxSize(pathname, PATH_MAX);
--      FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
 +      if (!FaultSafeUserMemAccess::IsStringReadable(pathname)) {
 +        return -EFAULT;
 +      }
        struct stat host_stat;
        uint64_t Result = FEX::HLE::_SyscallHandler->FM.NewFSStatAt(dirfd, pathname, &host_stat, flag);
        if (Result != -1) {
+-        SYSCALL_EFAULT_IF_NULL(buf);
+-        FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
 -        *buf = host_stat;
 +        FEX::HLE::x64::guest_stat guest = host_stat;
 +        if (FaultSafeUserMemAccess::CopyToUser(buf, &guest, sizeof(guest))) {
@@ -464,12 +475,12 @@ index 703c875..4eab76a 100644
        }
        SYSCALL_ERRNO();
      });
-@@ -133,8 +147,9 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
+@@ -140,8 +147,9 @@ void RegisterFD(FEX::HLE::SyscallHandler* Handler) {
    });
  
    REGISTER_SYSCALL_IMPL_X64(statfs, [](FEXCore::Core::CpuStateFrame* Frame, const char* path, struct statfs* buf) -> uint64_t {
+-    SYSCALL_EFAULT_IF_NULL(path);
 -    FaultSafeUserMemAccess::VerifyIsStringReadableMaxSize(path, PATH_MAX);
--    FaultSafeUserMemAccess::VerifyIsWritable(buf, sizeof(*buf));
 +    if (!FaultSafeUserMemAccess::IsStringReadable(path)) {
 +      return -EFAULT;
 +    }
@@ -603,10 +614,10 @@ index c25ff5b..1c62131 100644
  
                                FEX::HLE::ExecveAtArgs AtArgs {
 diff --git a/unittests/FEXLinuxTests/Known_Failures b/unittests/FEXLinuxTests/Known_Failures
-index 689a15a..90f3cbf 100644
+index 9fcd3dd..221e81f 100644
 --- a/unittests/FEXLinuxTests/Known_Failures
 +++ b/unittests/FEXLinuxTests/Known_Failures
-@@ -20,9 +20,8 @@ sigtest_samask.64
+@@ -20,6 +20,5 @@ sigtest_samask.64
  sigtest_sigmask.32
  sigtest_sigmask.64
  
@@ -614,9 +625,6 @@ index 689a15a..90f3cbf 100644
 +# The 32-bit syscall handlers do not use the fault-safe accessors yet
  syscalls_efault.32
 -syscalls_efault.64
- 
- # partial instruction decode is known to fail
- noexec_protect.64
 diff --git a/unittests/FEXLinuxTests/tests/syscalls/syscalls_efault.cpp b/unittests/FEXLinuxTests/tests/syscalls/syscalls_efault.cpp
 index 9e59849..6a7cb80 100644
 --- a/unittests/FEXLinuxTests/tests/syscalls/syscalls_efault.cpp

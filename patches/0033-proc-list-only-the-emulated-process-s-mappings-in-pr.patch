@@ -1,4 +1,4 @@
-From e8f2a2fb9ffc27009ace8ae088fba3e89e523ead Mon Sep 17 00:00:00 2001
+From 13c7e3645dc073f469f69b535fecc16ac9972e5b Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 11 Oct 2026 13:01:24 +0300
 Subject: [PATCH] proc: list only the emulated process's mappings in
@@ -50,7 +50,7 @@ Upstream: FEX main 14c92681 (2026-10-07) has no /proc/<pid>/maps emulation.
  2 files changed, 61 insertions(+)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
-index e5267e8..885849e 100644
+index 8c6f8c1..ce55821 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
 @@ -25,6 +25,8 @@ $end_info$
@@ -62,7 +62,7 @@ index e5267e8..885849e 100644
  #include <cstring>
  #include <fcntl.h>
  #include <filesystem>
-@@ -609,6 +611,22 @@ EmulatedFDManager::EmulatedFDManager(FEXCore::Context::Context* ctx)
+@@ -610,6 +612,22 @@ EmulatedFDManager::EmulatedFDManager(FEXCore::Context::Context* ctx)
  
  EmulatedFDManager::~EmulatedFDManager() {}
  
@@ -85,7 +85,7 @@ index e5267e8..885849e 100644
  int32_t EmulatedFDManager::Open(const char* pathname, int flags, uint32_t mode) {
    auto Creator = FDReadCreators.end();
    if (pathname) {
-@@ -616,12 +634,54 @@ int32_t EmulatedFDManager::Open(const char* pathname, int flags, uint32_t mode)
+@@ -617,12 +635,54 @@ int32_t EmulatedFDManager::Open(const char* pathname, int flags, uint32_t mode)
    }
  
    if (Creator == FDReadCreators.end()) {

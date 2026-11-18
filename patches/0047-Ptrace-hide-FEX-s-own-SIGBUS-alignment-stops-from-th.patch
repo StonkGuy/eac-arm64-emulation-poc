@@ -1,4 +1,4 @@
-From a7b22052b33c4741b912dd8f6f0d0588bc947444 Mon Sep 17 00:00:00 2001
+From f3481dcdc5f475b2847ca26f26f5ab0e55470ea6 Mon Sep 17 00:00:00 2001
 From: yungtry <yungtry@users.noreply.github.com>
 Date: Sun, 11 Oct 2026 21:58:00 +0300
 Subject: [PATCH] Ptrace: hide FEX's own SIGBUS alignment stops from the tracer

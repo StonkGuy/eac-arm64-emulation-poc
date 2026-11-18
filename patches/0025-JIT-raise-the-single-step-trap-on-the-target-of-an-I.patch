@@ -1,4 +1,4 @@
-From 78adb13feb2dda06ee3aa241799fbbaa8012f6f2 Mon Sep 17 00:00:00 2001
+From ff83240f5111be74d353d0e4ca7317caf5a32b02 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 21:57:46 +0300
 Subject: [PATCH] JIT: raise the single-step trap on the target of an IRETQ
@@ -34,6 +34,10 @@ Upstream FEX main has the same TF write (OpcodeDispatcher.h SetRFLAG), the same 
 exits (BranchOps.cpp).
 
 Base: FEX-2610 14c92681 + patches 0001-0024.
+
+eac-2611 (FEX-2611.1): upstream 502a1900e adds an L1 lookup to the dispatcher's syscall return that bypasses
+LoopTop's TF check; covered by the later commit "Dispatcher: keep single-step mode across the syscall return's L1
+lookup".
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 ---
@@ -76,10 +80,10 @@ index c2b1d8e..c418630 100644
        // First try to pop from the call-ret stack, otherwise follow the normal path (but ending in a ret)
        ldp<ARMEmitter::IndexType::POST>(TMP1, TMP2, REG_CALLRET_SP, 0x10);
 diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
-index ef7e332..bb0d111 100644
+index 435afed..459b0a6 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 +++ b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
-@@ -886,6 +886,7 @@ CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry, uint64_t Size
+@@ -862,6 +862,7 @@ CPUBackend::CompiledCode Arm64JITCore::EmitJITCode(uint64_t Entry, uint64_t Size
    this->DebugData = DebugData;
    this->IR = IR;
    RequiresFarARM64Jumps = false;
@@ -88,7 +92,7 @@ index ef7e332..bb0d111 100644
  
    // Prepare restart via long jump in case branch encoding fails.
 diff --git a/FEXCore/Source/Interface/Core/JIT/JITClass.h b/FEXCore/Source/Interface/Core/JIT/JITClass.h
-index 17e7691..331b3c5 100644
+index 980a832..19268c3 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JITClass.h
 +++ b/FEXCore/Source/Interface/Core/JIT/JITClass.h
 @@ -82,6 +82,7 @@ private:
@@ -100,7 +104,7 @@ index 17e7691..331b3c5 100644
    uint32_t SSANodeMultiplier {24};
  
 diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
-index 0f7a00e..731f912 100644
+index 696cd96..fd6cb25 100644
 --- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
 +++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
 @@ -164,7 +164,8 @@ void OpDispatchBuilder::IRETOp(OpcodeArgs) {
@@ -114,10 +118,10 @@ index 0f7a00e..731f912 100644
  }
  
 diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
-index 71766e0..b02dbdf 100644
+index 4477c72..4dda8a8 100644
 --- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
 +++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
-@@ -1875,8 +1875,11 @@ private:
+@@ -1906,8 +1906,11 @@ private:
        // An exception should still be raised after an instruction that unsets TF, leave the unblocked bit set but unset
        // the TF bit to cause such behaviour. The handling code at the start of the next block will then unset the
        // unblocked bit before raising the exception.

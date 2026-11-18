@@ -1,4 +1,4 @@
-From 8fed995217c1b814ff6a702630b5fbd8ac4bfa85 Mon Sep 17 00:00:00 2001
+From fb58edfc8e20678b513ac169c8f39fc9de7fde7c Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 21:40:02 +0300
 Subject: [PATCH] LinuxEmulation: deliver guest reads of the call/ret

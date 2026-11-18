@@ -1,13 +1,13 @@
 # The patch series
 
-Sixty-two patches against **FEX-Emu 2610** (base commit `14c9268`). 0001–0010 were developed and measured on 2609.1
+Fifty-three patches against **FEX-Emu 2611.1** (base commit `4f9c1f1`; until `eac-2610.5` the series was on FEX-2610 `14c9268`). 0001–0010 were developed and measured on 2609.1
 (`9fbdc00`) and rebase onto 2610 with no code changes; 0011–0020 were written against 2610; 0022–0026 on top of 0001–0020
-(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026, 0036–0039 and 0041–0053 (group H) in `eac-2610.3`, 0054–0070 (group I) in `eac-2610.4`, and 0071 (group J) in `eac-2610.5`. They are not all the same kind of thing, so they are
+(`0021` is withdrawn, see below); 0033 and 0035 were added on top of 0026, 0036–0039 and 0041–0053 (group H) in `eac-2610.3`, 0054–0070 (group I) in `eac-2610.4`, and 0071 (group J) in `eac-2610.5`; `eac-2611.1` rebased the series onto FEX-2611.1 and left out five patches that it provides (K). They are not all the same kind of thing, so they are
 grouped here by what they are for.
 
-**Where the code lives.** Each patch is one commit on branch `eac-2610` of [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) (release tag
-`eac-2610.5`), and every test named below is in that branch's
-[`eac-tests/`](https://github.com/StonkGuy/FEX/tree/eac-2610/eac-tests). `patches/` here is a generated snapshot of
+**Where the code lives.** Each patch is one commit on branch `eac-2611` of [StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2611) (release tag
+`eac-2611.1`), and every test named below is in that branch's
+[`eac-tests/`](https://github.com/StonkGuy/FEX/tree/eac-2611/eac-tests). `patches/` here is a generated snapshot of
 those commits; send changes to the fork.
 
 The groups:
@@ -415,6 +415,25 @@ expected in the SteamOS guest. Live: VRChat with EAC on Proton Experimental 11.0
 Success" and in a world (on `eac-2610.4` it exited after 12 s).
 
 ---
+
+## K. Rebase onto FEX-2611.1 (`eac-2611.1`)
+
+The series on FEX-2611.1 (`4f9c1f1`), one commit per patch in the same order. Checked as every release is: FEX's ASM
+tests (7647/7647), `eac-tests` under FEX on Arm64 (88/88, the same as on `eac-2610`) and natively on x86-64 as the
+reference, InstCountCI (108/108), and a live VRChat session (EAC session, world joined, three minutes in the world).
+
+- **Left out, because FEX-2611 provides them:** 0059 and 0064 (the fetch fault address of an instruction split across
+  a page: upstream `b65c96b75e`, `511f58356e`), 0061 (XSETBV raises #GP in user mode: `61523a6db1`, identical), 0066
+  and 0067 (the `0F B8/BC/BD` decode fix and its test: `68f4c5fbc4`, `95a305bc4d`, which they had backported). Their
+  tests stay in `eac-tests/`.
+- **Adapted:** 0004, 0011 and 0042 (text only; 0011's `CPUIDFault` moved with upstream's thread state), 0055 (to
+  upstream's larger fault record), 0060 and 0065 (merged with upstream's partial-instruction fault decoding).
+- **Disk cache:** 0056 is the fork's format version, now revision 1 on upstream version 43 (`33067`); the revisions
+  0057, 0062 and 0068 are folded into it. A cache written by an `eac-2610` build is not reused.
+- **InstCountCI:** 0058, 0063 and 0069 are replaced by 0072 and 0073, regenerated on an Arm64 runner: POPF and POP SS
+  take three more instructions, MOV from FS/GS one more (0054, 0055).
+- FEX-2611 itself reports more CPU features to the guest (for example BF16, AVX-NE-CONVERT, SHA512, SERIALIZE), which
+  an anti-cheat fingerprint may notice.
 
 ## Applying
 

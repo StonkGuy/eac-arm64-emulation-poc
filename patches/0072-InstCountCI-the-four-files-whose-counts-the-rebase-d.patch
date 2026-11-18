@@ -1,0 +1,70 @@
+From a330d99e4a587f6d5fd3a26d4ba852cf81da420f Mon Sep 17 00:00:00 2001
+From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 14:36:02 +0200
+Subject: [PATCH] InstCountCI: the four files whose counts the rebase did not
+ regenerate carry upstream's version again
+
+Primary, Primary_32Bit and their FlagM variants hold FEX-2611.1's counts, not this
+series': stamped with revision 1 (33067) they made CodeSizeValidation refuse the
+update. Back at 43 the update records this series' counts with 33067.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ unittests/InstructionCountCI/FlagM/Primary.json       | 2 +-
+ unittests/InstructionCountCI/FlagM/Primary_32Bit.json | 2 +-
+ unittests/InstructionCountCI/Primary.json             | 2 +-
+ unittests/InstructionCountCI/Primary_32Bit.json       | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/unittests/InstructionCountCI/FlagM/Primary.json b/unittests/InstructionCountCI/FlagM/Primary.json
+index c1e6f95..c4fa55f 100644
+--- a/unittests/InstructionCountCI/FlagM/Primary.json
++++ b/unittests/InstructionCountCI/FlagM/Primary.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33067
++    "BinaryCacheVersion": 43
+   },
+   "Instructions": {
+     "add bl, cl": {
+diff --git a/unittests/InstructionCountCI/FlagM/Primary_32Bit.json b/unittests/InstructionCountCI/FlagM/Primary_32Bit.json
+index 9b174e5..b8e80ad 100644
+--- a/unittests/InstructionCountCI/FlagM/Primary_32Bit.json
++++ b/unittests/InstructionCountCI/FlagM/Primary_32Bit.json
+@@ -10,7 +10,7 @@
+       "SVE256",
+       "AFP"
+     ],
+-    "BinaryCacheVersion": 33067
++    "BinaryCacheVersion": 43
+   },
+   "Instructions": {
+     "push es": {
+diff --git a/unittests/InstructionCountCI/Primary.json b/unittests/InstructionCountCI/Primary.json
+index 3cd0a51..33f9a07 100644
+--- a/unittests/InstructionCountCI/Primary.json
++++ b/unittests/InstructionCountCI/Primary.json
+@@ -10,7 +10,7 @@
+       "FLAGM2",
+       "MOPS"
+     ],
+-    "BinaryCacheVersion": 33067
++    "BinaryCacheVersion": 43
+   },
+   "Instructions": {
+     "add bl, cl": {
+diff --git a/unittests/InstructionCountCI/Primary_32Bit.json b/unittests/InstructionCountCI/Primary_32Bit.json
+index b3d4193..2a13202 100644
+--- a/unittests/InstructionCountCI/Primary_32Bit.json
++++ b/unittests/InstructionCountCI/Primary_32Bit.json
+@@ -9,7 +9,7 @@
+       "FlagM",
+       "FlagM2"
+     ],
+-    "BinaryCacheVersion": 33067
++    "BinaryCacheVersion": 43
+   },
+   "Instructions": {
+     "push es": {

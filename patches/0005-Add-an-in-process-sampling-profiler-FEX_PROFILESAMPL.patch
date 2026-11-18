@@ -1,4 +1,4 @@
-From 4ca16373574ccbf998c69138ea3ce603bded7842 Mon Sep 17 00:00:00 2001
+From b409a79744b58b907ea7906530eb3c3471001ba8 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 07:25:50 +0300
 Subject: [PATCH] Add an in-process sampling profiler (FEX_PROFILESAMPLEHZ)
@@ -26,10 +26,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  create mode 100644 Source/Tools/LinuxEmulation/LinuxSyscalls/SamplingProfiler.h
 
 diff --git a/FEXCore/Source/Interface/Config/Config.json.in b/FEXCore/Source/Interface/Config/Config.json.in
-index 94f4597..5e94fdf 100644
+index 63a1134..5e8fe86 100644
 --- a/FEXCore/Source/Interface/Config/Config.json.in
 +++ b/FEXCore/Source/Interface/Config/Config.json.in
-@@ -574,6 +574,23 @@
+@@ -602,6 +602,23 @@
            "\tfull: Validate code before every run (slow)"
          ]
        },

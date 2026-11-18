@@ -1,4 +1,4 @@
-From 4dca50ff0868740834637ad043c311d7162aac47 Mon Sep 17 00:00:00 2001
+From 51c81db6e29007a7499b28224c89f286251b7f1f Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Tue, 27 Oct 2026 10:05:27 +0200
 Subject: [PATCH] FEXCore: load FS and GS with MOV in 64-bit mode as Linux does
@@ -31,22 +31,27 @@ does not get past the first load, FEX after prints output identical to
 native. ASM test Multiblock/InvalidBlockStateIsolation used MOV FS as its
 unsupported instruction; it uses a32 stosb now.
 
+eac-2611 (FEX-2611.1): upstream b65c96b75e grew SynchronousFaultData to 16 bytes
+(FaultAddress, the partial-decode fault address that becomes si_addr). BreakErrorCode now copies only the first 8
+bytes of the constant, clears FaultAddress like upstream's Break and EmitTFCheck, and takes the
+GuestSignal_SynchronousFault path when SupportsFaultFreeSynchronousFaults is set (ARM64EC only; false on Linux).
+
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- FEXCore/Source/Interface/Core/JIT/MiscOps.cpp | 31 ++++++++++
+ FEXCore/Source/Interface/Core/JIT/MiscOps.cpp | 38 ++++++++++++
  .../Interface/Core/OpcodeDispatcher.cpp       | 61 ++++++++++++++-----
  .../Source/Interface/Core/OpcodeDispatcher.h  |  5 ++
  FEXCore/Source/Interface/IR/IR.json           |  6 ++
  FEXCore/Source/Interface/IR/IREmitter.cpp     |  3 +-
  .../LinuxSyscalls/Syscalls/Thread.cpp         |  2 +
  .../Multiblock/InvalidBlockStateIsolation.asm |  2 +-
- 7 files changed, 93 insertions(+), 17 deletions(-)
+ 7 files changed, 100 insertions(+), 17 deletions(-)
 
 diff --git a/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp b/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
-index 6e8df95..d106031 100644
+index 137c99c..edca2ef 100644
 --- a/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
 +++ b/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
-@@ -96,6 +96,37 @@ DEF_OP(Break) {
+@@ -107,6 +107,44 @@ DEF_OP(Break) {
    }
  }
  
@@ -63,20 +68,27 @@ index 6e8df95..d106031 100644
 +    .TrapNo = Op->Reason.TrapNumber,
 +    .si_code = Op->Reason.si_code,
 +    .err_code = 0,
++    .FaultAddress = 0, // No fault address: si_addr stays the faulting RIP.
 +  };
 +  static_assert(offsetof(Core::CpuStateFrame::SynchronousFaultDataStruct, err_code) == 4, "err_code is bits 32-47");
 +
 +  uint64_t Constant {};
-+  memcpy(&Constant, &State, sizeof(State));
++  memcpy(&Constant, &State, sizeof(uint64_t));
 +
-+  LoadConstant(ARMEmitter::Size::i64Bit, TMP1, Constant);
++  LoadConstant(ARMEmitter::Size::i64Bit, TMP1, static_cast<uint64_t>(Constant));
 +  bfi(ARMEmitter::Size::i64Bit, TMP1, TMP2, 32, 16);
++  // Can't use stp, offset is too large.
 +  str(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, SynchronousFaultData));
++  str(ARMEmitter::XReg::zr, STATE, offsetof(FEXCore::Core::CpuStateFrame, SynchronousFaultData) + 8);
 +
-+  switch (Op->Reason.Signal) {
-+  case Core::FAULT_SIGILL: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGILL)); break;
-+  case Core::FAULT_SIGSEGV: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGSEGV)); break;
-+  default: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGTRAP)); break;
++  if (CTX->HostFeatures.ProcessFeatures.SupportsFaultFreeSynchronousFaults) {
++    ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SynchronousFault));
++  } else {
++    switch (Op->Reason.Signal) {
++    case Core::FAULT_SIGILL: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGILL)); break;
++    case Core::FAULT_SIGSEGV: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGSEGV)); break;
++    default: ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, Pointers.GuestSignal_SIGTRAP)); break;
++    }
 +  }
 +  br(TMP1);
 +}
@@ -85,10 +97,10 @@ index 6e8df95..d106031 100644
    auto Dst = GetReg(Node);
    mrs(Dst, ARMEmitter::SystemRegister::FPCR);
 diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
-index 0dac7aa..69a05ea 100644
+index dbdcc5a..e43b67d 100644
 --- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
 +++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
-@@ -1255,6 +1255,46 @@ void OpDispatchBuilder::FLAGControlOp(OpcodeArgs) {
+@@ -1261,6 +1261,46 @@ void OpDispatchBuilder::FLAGControlOp(OpcodeArgs) {
  }
  
  
@@ -135,7 +147,7 @@ index 0dac7aa..69a05ea 100644
  void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
    // In x86-64 mode the accesses to the segment registers end up being constant zero moves
    // Aside from FS/GS
-@@ -1268,7 +1308,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+@@ -1274,7 +1314,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
    // selected for the registers
    // This statement is actually untrue, the instructions will /actually/ load 16bits in to the selector portion of the register!
    // Tested on a Zen+ CPU, the selector is the portion that is modified!
@@ -144,7 +156,7 @@ index 0dac7aa..69a05ea 100644
    // The loads here also load the selector, NOT the base
  
    if (ToSeg) {
-@@ -1306,8 +1346,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+@@ -1312,8 +1352,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
          _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, gs_idx));
          UpdatePrefixFromSegment(Src, FEXCore::X86Tables::DecodeFlags::FLAG_GS_PREFIX);
        } else {
@@ -154,7 +166,7 @@ index 0dac7aa..69a05ea 100644
        }
        break;
      case FEXCore::X86State::REG_RSP: // FS
-@@ -1316,8 +1355,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+@@ -1322,8 +1361,7 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
          _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, fs_idx));
          UpdatePrefixFromSegment(Src, FEXCore::X86Tables::DecodeFlags::FLAG_FS_PREFIX);
        } else {
@@ -164,7 +176,7 @@ index 0dac7aa..69a05ea 100644
        }
        break;
      default: UnimplementedOp(Op); return;
-@@ -1344,19 +1382,12 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+@@ -1350,19 +1388,12 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
        break;
      case FEXCore::X86State::REG_RBP: // GS
      case FEXCore::X86State::REG_R13: // GS
@@ -188,12 +200,12 @@ index 0dac7aa..69a05ea 100644
      default: UnimplementedOp(Op); return;
      }
 diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
-index b02dbdf..9d39337 100644
+index 4dda8a8..7d5d4ab 100644
 --- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
 +++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
-@@ -211,6 +211,10 @@ public:
-     FlushRegisterCache();
-     return _Break(Reason);
+@@ -214,6 +214,10 @@ public:
+     }
+     return _Break(Reason, RelocatedPC);
    }
 +  IRPair<IROp_BreakErrorCode> BreakErrorCode(Ref ErrorCode, BreakDefinition Reason) {
 +    FlushRegisterCache();
@@ -202,7 +214,7 @@ index b02dbdf..9d39337 100644
    IRPair<IROp_Thunk> Thunk(Ref ArgPtr, SHA256Sum ThunkNameHash) {
      FlushRegisterCache();
      return _Thunk(ArgPtr, ThunkNameHash);
-@@ -410,6 +414,7 @@ public:
+@@ -415,6 +419,7 @@ public:
    void XCHGRAXOp(OpcodeArgs);
    void SAHFOp(OpcodeArgs);
    void LAHFOp(OpcodeArgs);
@@ -211,11 +223,11 @@ index b02dbdf..9d39337 100644
    void FLAGControlOp(OpcodeArgs);
    void MOVOffsetOp(OpcodeArgs);
 diff --git a/FEXCore/Source/Interface/IR/IR.json b/FEXCore/Source/Interface/IR/IR.json
-index 8805200..263ddee 100644
+index 16c29e7..3412280 100644
 --- a/FEXCore/Source/Interface/IR/IR.json
 +++ b/FEXCore/Source/Interface/IR/IR.json
 @@ -324,6 +324,12 @@
-       "Break BreakDefinition:$Reason": {
+       "Break BreakDefinition:$Reason, GPR:$FaultAddress": {
          "HasSideEffects": true
        },
 +      "BreakErrorCode GPR:$ErrorCode, BreakDefinition:$Reason": {

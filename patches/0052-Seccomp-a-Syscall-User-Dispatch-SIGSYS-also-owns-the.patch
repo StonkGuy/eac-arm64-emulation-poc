@@ -1,4 +1,4 @@
-From 90a28293bdc74482347d16b7b7461833f3eac4ae Mon Sep 17 00:00:00 2001
+From 129164650cb0bfca9911170cb449a9b7abf3610b Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Mon, 19 Oct 2026 09:48:36 +0300
 Subject: [PATCH] Seccomp: a Syscall User Dispatch SIGSYS also owns the trap's
@@ -15,7 +15,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 6 insertions(+), 4 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 451801c..e4607ff 100644
+index 4e0ea7a..fb79115 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -333,10 +333,12 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS

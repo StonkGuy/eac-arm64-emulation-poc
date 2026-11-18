@@ -1,4 +1,4 @@
-From 3609f0399651d6a8d9ad7d7cd003dc5b73273b31 Mon Sep 17 00:00:00 2001
+From 223ccab7ddb12cb11b9d71e9969f2a79f5c93f19 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 21:40:02 +0300
 Subject: [PATCH] SamplingProfiler: FEX_PROFILESAMPLEMINTHREADS and external
@@ -28,10 +28,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  4 files changed, 72 insertions(+), 8 deletions(-)
 
 diff --git a/FEXCore/Source/Interface/Config/Config.json.in b/FEXCore/Source/Interface/Config/Config.json.in
-index 85dec66..c153789 100644
+index 2ae1020..5f59684 100644
 --- a/FEXCore/Source/Interface/Config/Config.json.in
 +++ b/FEXCore/Source/Interface/Config/Config.json.in
-@@ -583,6 +583,16 @@
+@@ -611,6 +611,16 @@
            "Use with LibraryJITNaming to attribute samples to guest libraries. 0 disables."
          ]
        },

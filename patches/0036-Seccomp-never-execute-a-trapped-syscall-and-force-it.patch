@@ -1,4 +1,4 @@
-From c50a7460b5c28b9c5f0b5207c4473b387b4e0062 Mon Sep 17 00:00:00 2001
+From edd75d8bb23d48df3a9fdb0caa856d7e21355087 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 11 Oct 2026 17:03:36 +0300
 Subject: [PATCH] Seccomp: never execute a trapped syscall, and force its
@@ -80,10 +80,10 @@ index d8f2686..0322a78 100644
    case SECCOMP_RET_ERRNO: {
      // errno return is clamped.
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 7721996..98d0752 100644
+index 3fbf953..d2873b3 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-@@ -1001,6 +1001,26 @@ void SignalDelegator::QueueSignal(pid_t tgid, pid_t tid, int Signal, siginfo_t*
+@@ -1020,6 +1020,26 @@ void SignalDelegator::QueueSignal(pid_t tgid, pid_t tid, int Signal, siginfo_t*
    }
  }
  

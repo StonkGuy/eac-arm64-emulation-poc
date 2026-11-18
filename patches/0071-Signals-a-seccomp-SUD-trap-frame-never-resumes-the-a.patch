@@ -1,4 +1,4 @@
-From 37abac21592519ee64e884abee801b575386c1eb Mon Sep 17 00:00:00 2001
+From e4dfb1c09b621e6cbc241f44ba0a19c4bdc4322b Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 30 Oct 2026 22:21:50 +0200
 Subject: [PATCH] Signals: a seccomp/SUD trap frame never resumes the abandoned
@@ -24,7 +24,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  2 files changed, 13 insertions(+), 7 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 5108e78..712e442 100644
+index 1d1b23b..21149d8 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -367,9 +367,10 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS
@@ -42,7 +42,7 @@ index 5108e78..712e442 100644
    // between the filter deciding to trap and the SIGSYS being delivered must see the interrupted state (RIP at the
    // `syscall`), otherwise its handler returns past the syscall and the trap is skipped without its SIGSYS ever
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
-index 86e9358..11b6201 100644
+index 75f62ae..7e79b2a 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator/GuestFramesManagement.cpp
 @@ -169,8 +169,12 @@ void SignalDelegator::RestoreFrame_x64(FEXCore::Core::InternalThreadState* Threa

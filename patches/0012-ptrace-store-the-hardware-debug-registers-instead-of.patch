@@ -1,4 +1,4 @@
-From 89775f9b3fe8f739f4188981a97c9759aa3d04e2 Mon Sep 17 00:00:00 2001
+From c70464796e05e4116b687bc79b2b36294c49f975 Mon Sep 17 00:00:00 2001
 From: build <build@invalid>
 Date: Thu, 8 Oct 2026 20:36:57 +0300
 Subject: [PATCH] ptrace: store the hardware debug registers instead of
@@ -22,6 +22,11 @@ the offsets Linux rejects. Firing an actual JIT breakpoint on a matched RIP is
 not implemented (see FEXGAPS-VERIFY.md).
 
 Base: FEX-2610 14c92681 + patches 0001-0010.
+
+eac-2611 (FEX-2611.1): upstream c5352bf18a and c2181679c9 add DR0-DR3, DR6 and DR7 to CPUState and execute
+breakpoints in the decoder, set only from the ARM64EC thread context. This patch keeps its own shadow in the tracee's
+shared state and never writes CPUState::Dr/Dr7, so on Linux the decoder's breakpoint check stays off as before.
+Arming execute breakpoints from ptrace through that state is possible now but has no known consumer.
 ---
  .../LinuxSyscalls/PtraceEmu.cpp               | 158 ++++++++++++++++--
  .../LinuxEmulation/LinuxSyscalls/PtraceEmu.h  |   1 +

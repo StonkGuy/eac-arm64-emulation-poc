@@ -1,4 +1,4 @@
-From 59c6631d48cb4e417c7095e993db48cef91c61ff Mon Sep 17 00:00:00 2001
+From 677c8ef6b77e0515529c76944396e12dc2f1dd90 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Tue, 27 Oct 2026 02:01:40 +0200
 Subject: [PATCH] FEXCore: IRET with RFLAGS.NT = 1 raises #GP
@@ -19,7 +19,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 30 insertions(+)
 
 diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
-index 731f912..0dac7aa 100644
+index fd6cb25..dbdcc5a 100644
 --- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
 +++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
 @@ -138,6 +138,36 @@ void OpDispatchBuilder::IRETOp(OpcodeArgs) {

@@ -1,4 +1,4 @@
-From 7b0764f418ea7cbb169d57e6e72bc9ae2d6a5847 Mon Sep 17 00:00:00 2001
+From 7ac6be50d71b05a965b9e079cf7d981a54480184 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:17:12 +0300
 Subject: [PATCH] FEXCore: keep the packed NZCV bytes out of reconstructed
@@ -18,7 +18,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 6 insertions(+), 1 deletion(-)
 
 diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
-index 2a07501..cf8b146 100644
+index f9544bb..2fb7b5b 100644
 --- a/FEXCore/Source/Interface/Core/Core.cpp
 +++ b/FEXCore/Source/Interface/Core/Core.cpp
 @@ -201,8 +201,13 @@ uint32_t ContextImpl::ReconstructCompactedEFLAGS(FEXCore::Core::InternalThreadSt

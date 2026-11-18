@@ -1,4 +1,4 @@
-From 1ccbe39e4b8079c8a81dc2b315241fe68b727af1 Mon Sep 17 00:00:00 2001
+From 76a104c822ec2d5c8ac2f55339ec40bd763b2839 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 18 Oct 2026 21:39:57 +0300
 Subject: [PATCH] Seccomp: only the trap's own SIGSYS resumes past the trapped
@@ -28,7 +28,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 7 insertions(+), 2 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index 07af884..451801c 100644
+index 5d5eefd..4e0ea7a 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -333,8 +333,13 @@ bool SignalDelegator::HandleDispatcherGuestSignal(FEXCore::Core::InternalThreadS

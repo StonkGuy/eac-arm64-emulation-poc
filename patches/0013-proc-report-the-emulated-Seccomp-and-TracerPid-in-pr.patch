@@ -1,4 +1,4 @@
-From 915aca605d91eaad3ad2b89ab643a3698063ec7d Mon Sep 17 00:00:00 2001
+From a8c7048895dcd2ff2d774805fa9551ad6692fd2e Mon Sep 17 00:00:00 2001
 From: build <build@invalid>
 Date: Thu, 8 Oct 2026 20:37:02 +0300
 Subject: [PATCH] proc: report the emulated Seccomp: and TracerPid: in
@@ -30,7 +30,7 @@ Base: FEX-2610 14c92681 + patches 0001-0010.
  6 files changed, 94 insertions(+), 2 deletions(-)
 
 diff --git a/Source/Tools/FEXInterpreter/FEXInterpreter.cpp b/Source/Tools/FEXInterpreter/FEXInterpreter.cpp
-index 52bdba1..20564c3 100644
+index 73b0bb9..fc2a39d 100644
 --- a/Source/Tools/FEXInterpreter/FEXInterpreter.cpp
 +++ b/Source/Tools/FEXInterpreter/FEXInterpreter.cpp
 @@ -595,8 +595,10 @@ int main(int argc, char** argv, char** const envp) {
@@ -47,7 +47,7 @@ index 52bdba1..20564c3 100644
    SyscallHandler->DeserializeSeccompFD(ParentThread, FEXSeccompFD);
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
-index 4fec3bf..e5267e8 100644
+index 83e90c2..8c6f8c1 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/EmulatedFiles/EmulatedFiles.cpp
 @@ -10,6 +10,7 @@ $end_info$
@@ -58,7 +58,7 @@ index 4fec3bf..e5267e8 100644
  #include "LinuxSyscalls/Syscalls.h"
  #include "LinuxSyscalls/EmulatedFiles/EmulatedFiles.h"
  
-@@ -591,6 +592,14 @@ EmulatedFDManager::EmulatedFDManager(FEXCore::Context::Context* ctx)
+@@ -592,6 +593,14 @@ EmulatedFDManager::EmulatedFDManager(FEXCore::Context::Context* ctx)
    FDReadCreators[procAuxv] = &EmulatedFDManager::ProcAuxv;
    FDReadCreators["/proc/self/auxv"] = &EmulatedFDManager::ProcAuxv;
  
@@ -73,7 +73,7 @@ index 4fec3bf..e5267e8 100644
    if (ThreadsConfig > 1) {
      cpus_online = fextl::fmt::format("0-{}", ThreadsConfig - 1);
    } else {
-@@ -613,6 +622,66 @@ int32_t EmulatedFDManager::Open(const char* pathname, int flags, uint32_t mode)
+@@ -614,6 +623,66 @@ int32_t EmulatedFDManager::Open(const char* pathname, int flags, uint32_t mode)
    return Creator->second(CTX, AT_FDCWD, pathname, flags, mode);
  }
  

@@ -1,4 +1,4 @@
-From 2169934ddaa061f84eddf0ac2805232e6f156ccc Mon Sep 17 00:00:00 2001
+From fab7403b620c21e61bc18190a15a187df35646d6 Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Fri, 9 Oct 2026 22:35:05 +0300
 Subject: [PATCH] Signals: keep the signal alt stack while a thread exits on it
@@ -36,10 +36,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  6 files changed, 38 insertions(+), 7 deletions(-)
 
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index abdeaec..7721996 100644
+index c0811a0..3fbf953 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-@@ -1172,23 +1172,41 @@ void SignalDelegator::RegisterTLSState(FEX::HLE::ThreadStateObject* Thread) {
+@@ -1191,23 +1191,41 @@ void SignalDelegator::RegisterTLSState(FEX::HLE::ThreadStateObject* Thread) {
    }
  }
  
@@ -118,7 +118,7 @@ index ac8cc16..207c33b 100644
    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
  }
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
-index 7124a05..0813fca 100644
+index 89ec2d2..a164455 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls.h
 @@ -306,6 +306,7 @@ public:

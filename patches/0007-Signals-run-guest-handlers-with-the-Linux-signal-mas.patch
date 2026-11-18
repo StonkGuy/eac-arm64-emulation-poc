@@ -1,4 +1,4 @@
-From 00146a422aea5e55d356dda7f78dfdc8d758e41d Mon Sep 17 00:00:00 2001
+From 6a6142d595b029ca843a1633d393e46d344b313e Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Wed, 7 Oct 2026 10:54:18 +0300
 Subject: [PATCH] Signals: run guest handlers with the Linux signal mask;
@@ -37,10 +37,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  create mode 100644 Source/Tools/LinuxEmulation/LinuxSyscalls/SignalTrace.h
 
 diff --git a/FEXCore/Source/Interface/Config/Config.json.in b/FEXCore/Source/Interface/Config/Config.json.in
-index 5e94fdf..c5daac1 100644
+index 5e8fe86..0eb2ffc 100644
 --- a/FEXCore/Source/Interface/Config/Config.json.in
 +++ b/FEXCore/Source/Interface/Config/Config.json.in
-@@ -591,6 +591,25 @@
+@@ -619,6 +619,25 @@
            "ProfileSampleHz samples every guest thread instead of only the main one."
          ]
        },
@@ -99,7 +99,7 @@ index 500e001..3f02104 100644
    LinuxSyscalls/Seccomp/SeccompEmulator.cpp
    LinuxSyscalls/Seccomp/BPFEmitter.cpp
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
-index ffc178e..9a0104d 100644
+index 09a8429..17d05dd 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SignalDelegator.cpp
 @@ -9,6 +9,7 @@ $end_info$
@@ -155,7 +155,7 @@ index ffc178e..9a0104d 100644
  
    auto Frame = Thread->CurrentFrame;
  
-@@ -607,6 +625,8 @@ void SignalDelegator::HandleGuestSignal(FEX::HLE::ThreadStateObject* ThreadObjec
+@@ -626,6 +644,8 @@ void SignalDelegator::HandleGuestSignal(FEX::HLE::ThreadStateObject* ThreadObjec
    auto SigInfo = *static_cast<siginfo_t*>(Info);
  
    auto MustDeferSignal = (Thread->CurrentFrame->State.DeferredSignalRefCount.Load() != 0);
@@ -164,7 +164,7 @@ index ffc178e..9a0104d 100644
    if (Signal == SIGSEGV && SigInfo.si_code == SEGV_ACCERR && SigInfo.si_addr == reinterpret_cast<void*>(&Thread->InterruptFaultPage)) {
      if (!MustDeferSignal) {
        // We just reached the end of the outermost signal-deferring section and faulted to check for pending signals.
-@@ -670,6 +690,8 @@ void SignalDelegator::HandleGuestSignal(FEX::HLE::ThreadStateObject* ThreadObjec
+@@ -689,6 +709,8 @@ void SignalDelegator::HandleGuestSignal(FEX::HLE::ThreadStateObject* ThreadObjec
      // This allows us to maintain the expected signal mask through the guest signal handling and then all the way back again
      sigmask_val[0] = GetNewSigMask(Signal);
  
@@ -173,7 +173,7 @@ index ffc178e..9a0104d 100644
      // Now update the faulting page permissions so it will fault on write.
      mprotect(reinterpret_cast<void*>(&Thread->InterruptFaultPage), sizeof(Thread->InterruptFaultPage), PROT_NONE);
  
-@@ -682,6 +704,7 @@ void SignalDelegator::HandleGuestSignal(FEX::HLE::ThreadStateObject* ThreadObjec
+@@ -701,6 +723,7 @@ void SignalDelegator::HandleGuestSignal(FEX::HLE::ThreadStateObject* ThreadObjec
      // This signal is masked, must defer until the guest updates the signal mask.
      // Add it to the pending signal list
      ThreadObject->SignalInfo.PendingSignals |= 1ULL << (Signal - 1);
@@ -181,7 +181,7 @@ index ffc178e..9a0104d 100644
      return;
    }
  
-@@ -703,6 +726,23 @@ void SignalDelegator::HandleGuestSignal(FEX::HLE::ThreadStateObject* ThreadObjec
+@@ -722,6 +745,23 @@ void SignalDelegator::HandleGuestSignal(FEX::HLE::ThreadStateObject* ThreadObjec
      if (Handler.GuestHandler &&
          Handler.GuestHandler(Thread, Signal, &SigInfo, UContext, &Handler.GuestAction, &ThreadObject->SignalInfo.GuestAltStack)) {
        uint64_t NewMask = GetNewSigMask(Signal);
@@ -205,7 +205,7 @@ index ffc178e..9a0104d 100644
  
        // Update our host signal mask so we don't hit race conditions with signals
        // This allows us to maintain the expected signal mask through the guest signal handling and then all the way back again
-@@ -889,6 +929,10 @@ SignalDelegator::SignalDelegator(FEXCore::Context::Context* _CTX, const std::str
+@@ -908,6 +948,10 @@ SignalDelegator::SignalDelegator(FEXCore::Context::Context* _CTX, const std::str
    , ApplicationName {ApplicationName}
    , SupportsAVX {SupportsAVX}
    , SupportsSVE256 {SupportsSVE256} {
@@ -216,7 +216,7 @@ index ffc178e..9a0104d 100644
    // Signal zero isn't real
    HostHandlers[0].Installed = true;
  
-@@ -1210,6 +1254,7 @@ static void CheckForPendingSignals(const FEX::HLE::ThreadStateObject* Thread) {
+@@ -1229,6 +1273,7 @@ static void CheckForPendingSignals(const FEX::HLE::ThreadStateObject* Thread) {
    if (PendingSignals != 0) {
      for (int i = 0; i < 64; ++i) {
        if (PendingSignals & (1ULL << i)) {
@@ -224,7 +224,7 @@ index ffc178e..9a0104d 100644
          FHU::Syscalls::tgkill(Thread->ThreadInfo.PID, Thread->ThreadInfo.TID, i + 1);
          // We might not even return here which is spooky
        }
-@@ -1250,6 +1295,11 @@ uint64_t SignalDelegator::GuestSigProcMask(FEX::HLE::ThreadStateObject* Thread,
+@@ -1269,6 +1314,11 @@ uint64_t SignalDelegator::GuestSigProcMask(FEX::HLE::ThreadStateObject* Thread,
      }
  
      ::syscall(SYS_rt_sigprocmask, SIG_SETMASK, &HostMask, nullptr, 8);

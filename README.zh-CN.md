@@ -22,7 +22,7 @@
 
 | 你需要 | 原因 |
 |---|---|
-| **FEX-Emu 2610 及补丁：[StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2610) 标签 `eac-2610.5`** | 参见 [docs/patches.md](docs/patches.md)；用 `scripts/build-fex.sh` 构建 |
+| **FEX-Emu 2611.1 及补丁：[StonkGuy/FEX](https://github.com/StonkGuy/FEX/tree/eac-2611) 标签 `eac-2611.1`** | 参见 [docs/patches.md](docs/patches.md)；用 `scripts/build-fex.sh` 构建 |
 | **arm64 Linux 主机**（已验证：Apple M2 + Fedora Asahi Remix + muvm，或 macOS 27 + steamac libkrun 客户机） | 16 KB 页面的主机需要 4 KB 页面的客户机，因此需要 muvm 虚拟机；在 4 KB 页面主机上 FEX 可直接运行（未测试） |
 | **Proton Experimental 11.0** 和 *Proton EasyAntiCheat Runtime*，Steam 与 FEX 位于虚拟机边界的同一侧 | 此处所有内容均基于这些版本测量 |
 | 主机内存调优（`scripts/host-tune.sh`，Asahi，16 GB） | 16 GB 下，约 8 GB 虚拟机加 GPU 缓冲时主机内存耗尽；zswap/zram/水位设置可避免 OOM killer |
@@ -46,6 +46,7 @@
 | 0036–0039、0041–0053（eac-2610.3） | 修复 / 保真度 | Wine 11 所用的 seccomp 与 Syscall User Dispatch 陷阱路径（被陷阱捕获的系统调用不会执行、模拟 SUD、陷阱帧不丢失也不泄漏、EFLAGS 第 31 位），seccomp 下的 `execve`/`execveat`，`rt_sigreturn` 之后的 `InSyscallInfo`，错误指针返回 `-EFAULT`，内核写入代码页，跨 4 GiB 的 `munmap`，对跟踪者隐藏 SIGBUS 停止（The Division 2 的 EAC 启动器）。参见 [docs/patches.md](docs/patches.md#h-fixes-since-eac-26102--patches-00360039-00410053) |
 | 0054–0070（eac-2610.4） | 修复 / 保真度 | THE FINALS 反篡改代码探测的异常（带 NT 的 IRETQ、MOV 到 FS/GS、超长指令、XSETBV、取指故障地址），编译时以故障安全的方式读取客户机代码（THE FINALS 对局中的卡死），fork 自己的磁盘缓存格式版本，上游的 `0F B8/BC/BD` 解码修复，以及仅对可能写到正在运行的块的存储才重启 SMC（Hell Let Loose 的 EAC `210 (#2)`）。参见 [docs/patches.md](docs/patches.md#i-fixes-since-eac-26103--patches-00540070) |
 | 0071（eac-2610.5） | 修复 | Proton Experimental 11.0-20261027b 会在 Syscall User Dispatch 下重试 EAC 的原生系统调用；信号返回到被陷阱捕获的 `syscall` 时恢复了过时的 FEX 状态，导致 EAC 游戏在几秒内退出 |
+| 变基（eac-2611.1） | — | 补丁系列移植到 FEX-2611.1：0059、0061、0064、0066 和 0067 不再包含，因为 FEX-2611 已经提供；磁盘缓存修订合并为一个（0056）；0072/0073 是本系列的 InstCountCI 计数。参见 [docs/patches.md](docs/patches.md#k-rebase-onto-fex-26111-eac-26111) |
 
 ## 各处的改动
 
@@ -75,7 +76,7 @@
 
 ```sh
 sudo dnf install steam muvm fex-emu && steam          # 基础安装，登录，安装 VRChat，启动一次
-scripts/build-fex.sh                                  # 将 StonkGuy/FEX 标签 eac-2610.5 克隆并构建到 work/FEX
+scripts/build-fex.sh                                  # 将 StonkGuy/FEX 标签 eac-2611.1 克隆并构建到 work/FEX
 scripts/vm/install-overlay.sh
 (cd work/FEX/eac-tests/ptrace-inject && ./build.sh clang)
 scripts/vm/run-test-in-vm.sh work/FEX/eac-tests/ptrace-inject/ptrace_inject_test   # 必须输出 RESULT: PASS

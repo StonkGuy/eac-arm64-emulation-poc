@@ -1,4 +1,4 @@
-From 2c461f58fe6ae1211b30210db4a5961b9d2c000a Mon Sep 17 00:00:00 2001
+From d9d6532de9f25e95f82a51a6e4f3e8e27e29dc2e Mon Sep 17 00:00:00 2001
 From: StonkGuy <68372320+StonkGuy@users.noreply.github.com>
 Date: Sun, 11 Oct 2026 18:08:16 +0300
 Subject: [PATCH] SMC: write-protect a code page before publishing it as
@@ -53,10 +53,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  2 files changed, 21 insertions(+), 2 deletions(-)
 
 diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
-index 922d1b4..2a07501 100644
+index cad806a..f9544bb 100644
 --- a/FEXCore/Source/Interface/Core/Core.cpp
 +++ b/FEXCore/Source/Interface/Core/Core.cpp
-@@ -887,9 +887,11 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+@@ -893,9 +893,11 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
        auto LoadedCode = Thread->CPUBackend->LoadCachedCode(Hit->HostCode);
        if (LoadedCode.BlockBegin) {
          for (auto& CodePage : Hit->GuestPages) {
@@ -69,7 +69,7 @@ index 922d1b4..2a07501 100644
          }
  
          LOGMAN_THROW_A_FMT(Hit->EntryPointRIPs.size() == Hit->EntryPointHostOffsets.size(), "Mismatched Disk Cache entrypoint pairs!");
-@@ -979,13 +981,18 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+@@ -985,13 +987,18 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
    if (NeedsAddGuestCodeRanges) {
      // Track in the guest to host map all entrypoints for all pages the compiled block touches, if any page didn't previously
      // contain code, inform the frontend so it can setup SMC detection.
