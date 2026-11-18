@@ -1,4 +1,4 @@
-# eac-arm64-emulation-poc
+# eac-arm64-emulation-poc [中文](README.zh-CN.md)
 
 **A proof of concept: running VRChat with genuine Easy Anti-Cheat on an arm64 Linux machine through FEX-Emu — and
 everything it took to get there.**
