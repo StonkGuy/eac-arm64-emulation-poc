@@ -91,6 +91,7 @@ REALISM=1 VM_MEM_MB=10240 VM_VRAM_MB=3072 scripts/vm/steam-vm.sh   # 在虚拟�
 
 * **不是反作弊绕过。** 没有任何东西伪造、重放或短路 EAC 的结果；不包含任何 Epic 或 VRChat 的二进制、密钥或痕迹。补丁只是让 FEX 在 `ptrace`、信号和 `/proc/<pid>/exe` 方面表现得像真正的 Linux 内核，运行的 EAC 客户端是来自 Valve 的 Proton EAC Runtime 的原版、未修改版本。
 * **一个坦率说明的告诫。** 可选的 `scripts/vm/realism.sh` **不**触碰 EAC，但它也不是纯粹的模拟保真度：它向客户机提供看似合理的 SMBIOS/DMI 数据，使其看起来不那么像微虚拟机（并且，比 VRChat 的指南更进一步，还包括 PCI 设备列表和主机名）。这是遵循 VRChat 自己发布的指南《在虚拟机中使用 VRChat》的*环境适配*，该指南称 EAC 的 VM 阻止是其 CPUID 管理程序厂商检查，并且**"在某些情况下你可以让虚拟化与 EAC 共存，我们也不介意你这样做。"** 请将其理解为政策声明而非许可：属于"容忍但不受支持"，本仓库将该脚本标记为**可选**：没有它 VRChat 也能运行。它可能对反作弊检查机器硬件身份的其他游戏有用。它不修改游戏或反作弊。
+* **39 位地址空间的主机目前还不能运行，EAC 需要 x86-64 版 Proton。** FEX 以真实地址运行 64 位客户机，而 EAC 的启动器会在 `0x7001_0000_0000` 映射一个固定页面；Valve 的 Wine 也只把 `0x7000_0000_0000` 以上的被捕获系统调用视为原生调用。39 位 VA 的内核（Meta Quest 3、许多 Android 手机）目前会停在"Failed to initialize Wine helper buffer"；48 位 VA 的内核（Steam Frame）可以运行。针对 39 位主机的修复正在别处进行，尚无成功报告。请使用 x86-64 版 Proton Experimental：ARM64 版 Proton 以 arm64 运行 Wine，因此 EAC 的 x86-64 Linux 模块无法映射（`206`），而这些补丁（`ptrace`、信号、seccomp、`/proc`）位于 FEX 的 Linux 前端，ARM64 版 Proton 不使用它。
 * **VRChat 不支持。** VRChat 不支持虚拟机或模拟；Epic/VRChat 可随时更改任何内容，是否执行由他们决定。自行承担风险，绝不运行修改过的客户端。切勿对运行中的游戏附加调试器或 `perf`：EAC 会报告。
 
 ## Bugs、修复与上游贡献
